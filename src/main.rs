@@ -9,6 +9,7 @@
 //! forwards the requests to the light client.
 
 use crate::smoldot::SubLightClient;
+mod command;
 mod eth_adapter;
 mod smoldot;
 mod types;

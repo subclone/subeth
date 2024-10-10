@@ -10,6 +10,7 @@ pub struct EthAdapter {
     client: SubLightClient,
 }
 
+/// Implement the ETH API server
 #[async_trait]
 impl EthApiServer for EthAdapter {
     // ########################################################################
