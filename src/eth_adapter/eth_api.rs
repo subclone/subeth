@@ -3,7 +3,10 @@ use std::collections::BTreeMap;
 use super::*;
 use ethereum_types::{H160, H256, H64, U256, U64};
 use fc_rpc_core::types::*;
-use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::{
+    core::{async_trait, RpcResult},
+    types::ErrorObject,
+};
 
 /// ETH RPC adapter
 pub struct EthAdapter {
@@ -18,11 +21,19 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     fn protocol_version(&self) -> RpcResult<u64> {
-        unimplemented!()
+        Ok(1)
     }
 
     async fn syncing(&self) -> RpcResult<SyncStatus> {
-        unimplemented!()
+        // Query sync status from substrate
+        let status = self
+            .client
+            .request_blocking("system_syncState", vec![])
+            .await
+            .map_err(|e| ErrorObject::from(e))?;
+
+        // Parse response and convert to ETH sync status
+        Ok(SyncStatus::None)
     }
 
     fn author(&self) -> RpcResult<H160> {

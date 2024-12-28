@@ -51,3 +51,10 @@ impl From<jsonrpsee::types::ErrorObjectOwned> for SubEthError {
         SubEthError::ResponseFailed
     }
 }
+
+impl From<jsonrpsee::types::ErrorObject> for SubEthError {
+    fn from(e: jsonrpsee::types::ErrorObject) -> Self {
+        log::error!("Error: {:?}", e);
+        SubEthError::ResponseFailed
+    }
+}
