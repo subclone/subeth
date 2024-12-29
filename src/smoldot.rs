@@ -1,5 +1,7 @@
 //! Smoldot light client process
 
+use jsonrpsee::tracing::instrument::WithSubscriber;
+use jsonrpsee::Subscribers;
 use smoldot_light::platform::DefaultPlatform;
 use smoldot_light::{AddChainConfig, AddChainSuccess, ChainId};
 use std::iter;
@@ -82,13 +84,16 @@ impl SubLightClient {
     /// that are received from the client. So we should spawn a thread to listen to the responses
     /// and return the stream to the caller.
     fn subscribe(&self, method: &'static str, params: Vec<serde_json::Value>) {
-        // self.client.json_rpc_subscribe(method, params);
+        // add the method to the request
+        let request_str = format!(
+            r#"{{"jsonrpc":"2.0","method":"{}","params":[],"id":1}}"#,
+            method,
+        );
 
-        // // spawn a thread to listen to the responses
-        // std::thread::spawn(move || {
-        //     while let Some(response) = self.json_rpc_responses.next() {
-        //         println!("Received response: {:?}", response);
-        //     }
-        // });
+        self.client
+            .json_rpc_request(request_str, self.chain_id)
+            .unwrap();
+
+        // wait for the response
     }
 }

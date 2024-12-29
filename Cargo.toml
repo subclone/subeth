@@ -25,6 +25,7 @@ serde_json = { version = "1.0.79", default-features = false }
 smoldot-light = { git = "https://github.com/smol-dot/smoldot.git", rev = "23ce5b9cb21cbc7bf1f97b71dfd6c02a7280da92", default-features = false }
 sp-core = { version = "32.0.0", default-features = false }
 tokio = { version = "1", features = ["rt", "macros", "time", "rt-multi-thread"] }
+clap = "3.0.0"
 
 # evm dependencies
 fc-rpc-core = { git = "https://github.com/polkadot-evm/frontier.git" }
