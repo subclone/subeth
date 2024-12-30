@@ -8,6 +8,7 @@ use sp_core::H256;
 
 mod eth_api;
 
+/// Runs the ETH RPC adapter server
 async fn run_server(client: SubLightClient, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let eth_adapter = EthAdapter::new(client);
 

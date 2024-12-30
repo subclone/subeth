@@ -1,4 +1,6 @@
 //! Smoldot light client process
+//!
+//! Wrapped structure for Substrate light client that uses smoldot internally
 
 use jsonrpsee::tracing::instrument::WithSubscriber;
 use jsonrpsee::Subscribers;
