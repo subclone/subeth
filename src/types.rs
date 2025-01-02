@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use smoldot_light::HandleRpcError;
 
+/// General error type for the Subeth library.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SubEthError {
     /// Request failed
