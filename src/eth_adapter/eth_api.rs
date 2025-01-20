@@ -45,7 +45,7 @@ impl EthApiServer for EthAdapter {
     }
 
     fn block_number(&self) -> RpcResult<U256> {
-        unimplemented!()
+        let current_block_number = self.client.request_blocking("
     }
 
     fn chain_id(&self) -> RpcResult<Option<U64>> {
