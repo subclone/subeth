@@ -3,6 +3,14 @@
 use serde::{Deserialize, Serialize};
 use smoldot_light::HandleRpcError;
 
+/// Pallet to contract address mapping
+pub(crate) struct PalletContractMapping;
+
+impl PalletContractMapping {
+    /// Get the contract address for a given pallet
+    pub fn get_contract_address(pallet: &str) -> Option<&str> {}
+}
+
 /// General error type for the Subeth library.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SubEthError {

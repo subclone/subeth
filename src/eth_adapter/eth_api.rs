@@ -13,6 +13,149 @@ pub struct EthAdapter {
     client: SubLightClient,
 }
 
+impl EthAdapter {
+    /// Create a new instance of the ETH adapter
+    pub fn new(client: SubLightClient) -> Self {
+        Self { client }
+    }
+
+    /// Helper function to convert Substrate block to Ethereum block
+    fn to_eth_block(substrate_block: serde_json::Value) -> RichBlock {
+        let block_number =
+            U256::from_str(&substrate_block["header"]["number"].to_string()).unwrap();
+        let block_hash = H256::from_str(&substrate_block["hash"].to_string()).unwrap();
+        let parent_hash =
+            H256::from_str(&substrate_block["header"]["parentHash"].to_string()).unwrap();
+        let author = H160::from_str(&substrate_block["header"]["author"].to_string()).unwrap();
+        let timestamp =
+            U256::from_str(&substrate_block["header"]["timestamp"].to_string()).unwrap();
+        let transactions = substrate_block["extrinsics"]
+            .as_array()
+            .map(|txs| {
+                txs.iter()
+                    .map(|tx| to_eth_transaction(tx.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        RichBlock {
+            block: Block {
+                number: Some(block_number),
+                hash: Some(block_hash),
+                parent_hash,
+                nonce: None,                     // Substrate doesn't have nonce
+                sha3_uncles: H256::zero(),       // Substrate doesn't have uncles
+                logs_bloom: None,                // Substrate doesn't have logs bloom
+                transactions_root: H256::zero(), // Not applicable
+                state_root: H256::from_str(&substrate_block["header"]["stateRoot"].to_string())
+                    .unwrap(),
+                receipts_root: H256::zero(), // Not applicable
+                miner: author,
+                difficulty: U256::zero(), // Substrate doesn't have difficulty
+                total_difficulty: U256::zero(), // Substrate doesn't have total difficulty
+                extra_data: None,         // Not applicable
+                size: None,               // Not applicable
+                gas_limit: U256::zero(),  // Substrate doesn't have gas limit
+                gas_used: U256::zero(),   // Substrate doesn't have gas used
+                timestamp,
+                transactions,
+                uncles: Vec::new(), // Substrate doesn't have uncles
+            },
+        }
+    }
+
+    /// Helper function to convert Substrate transaction to Ethereum transaction
+    fn to_eth_transaction(substrate_tx: serde_json::Value) -> Transaction {
+        let tx_hash = H256::from_str(&substrate_tx["hash"].to_string()).unwrap();
+        let from = H160::from_str(&substrate_tx["signature"]["address"].to_string()).unwrap();
+        let to = H160::from_str(&substrate_tx["call"]["to"].to_string()).unwrap_or(H160::zero());
+        let value =
+            U256::from_str(&substrate_tx["call"]["value"].to_string()).unwrap_or(U256::zero());
+        let gas = U256::from_str(&substrate_tx["call"]["gas"].to_string()).unwrap_or(U256::zero());
+        let gas_price =
+            U256::from_str(&substrate_tx["call"]["gasPrice"].to_string()).unwrap_or(U256::zero());
+        let input = substrate_tx["call"]["input"]
+            .as_str()
+            .map(|s| s.as_bytes().to_vec())
+            .unwrap_or_default();
+
+        Transaction {
+            hash: tx_hash,
+            nonce: U256::zero(),     // Substrate doesn't have nonce
+            block_hash: None,        // Will be filled later
+            block_number: None,      // Will be filled later
+            transaction_index: None, // Will be filled later
+            from,
+            to: Some(to),
+            value,
+            gas_price,
+            gas,
+            input: input.into(),
+            v: U256::zero(), // Substrate doesn't have v
+            r: H256::zero(), // Substrate doesn't have r
+            s: H256::zero(), // Substrate doesn't have s
+        }
+    }
+
+    /// Helper function to convert Substrate receipt to Ethereum receipt
+    fn to_eth_receipt(substrate_receipt: serde_json::Value) -> Receipt {
+        let tx_hash = H256::from_str(&substrate_receipt["transactionHash"].to_string()).unwrap();
+        let block_hash = H256::from_str(&substrate_receipt["blockHash"].to_string()).unwrap();
+        let block_number = U256::from_str(&substrate_receipt["blockNumber"].to_string()).unwrap();
+        let gas_used =
+            U256::from_str(&substrate_receipt["gasUsed"].to_string()).unwrap_or(U256::zero());
+        let status =
+            U256::from_str(&substrate_receipt["status"].to_string()).unwrap_or(U256::zero());
+        let logs = substrate_receipt["logs"]
+            .as_array()
+            .map(|logs| logs.iter().map(|log| to_eth_log(log.clone())).collect())
+            .unwrap_or_default();
+
+        Receipt {
+            transaction_hash: tx_hash,
+            transaction_index: U256::zero(), // Not applicable
+            block_hash: Some(block_hash),
+            block_number: Some(block_number),
+            cumulative_gas_used: gas_used,
+            gas_used: Some(gas_used),
+            contract_address: None, // Substrate doesn't have contract addresses
+            logs,
+            status: Some(status),
+            root: None,       // Not applicable
+            logs_bloom: None, // Substrate doesn't have logs bloom
+        }
+    }
+
+    fn to_eth_log(substrate_log: serde_json::Value) -> Log {
+        let address = H160::from_str(&substrate_log["address"].to_string()).unwrap();
+        let topics = substrate_log["topics"]
+            .as_array()
+            .map(|topics| {
+                topics
+                    .iter()
+                    .map(|topic| H256::from_str(&topic.to_string()).unwrap())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let data = substrate_log["data"]
+            .as_str()
+            .map(|s| s.as_bytes().to_vec())
+            .unwrap_or_default();
+
+        Log {
+            address,
+            topics,
+            data: data.into(),
+            block_hash: None,        // Will be filled later
+            block_number: None,      // Will be filled later
+            transaction_hash: None,  // Will be filled later
+            transaction_index: None, // Will be filled later
+            log_index: None,         // Will be filled later
+            removed: false,          // Not applicable
+        }
+    }
+}
+
 /// Implement the ETH API server
 #[async_trait]
 impl EthApiServer for EthAdapter {
@@ -44,12 +187,24 @@ impl EthApiServer for EthAdapter {
         unimplemented!()
     }
 
-    fn block_number(&self) -> RpcResult<U256> {
-        let current_block_number = self.client.request_blocking("
+    async fn block_number(&self) -> RpcResult<U256> {
+        let response = self
+            .client
+            .request_blocking("chain_getBlock", vec![])
+            .await?;
+        let block_number: U256 = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        Ok(block_number)
     }
 
     fn chain_id(&self) -> RpcResult<Option<U64>> {
-        unimplemented!()
+        let response = self
+            .client
+            .request_blocking("eth_chainId", vec![])
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let chain_id: U64 = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        Ok(Some(chain_id))
     }
 
     // ########################################################################
@@ -57,7 +212,14 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     async fn block_by_hash(&self, hash: H256, full: bool) -> RpcResult<Option<RichBlock>> {
-        unimplemented!()
+        let response = self
+            .client
+            .request_blocking("chain_getBlock", vec![serde_json::json!(hash)])
+            .await?;
+        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let eth_block = Self::to_eth_block(substrate_block);
+        Ok(Some(eth_block))
     }
 
     async fn block_by_number(
@@ -65,38 +227,89 @@ impl EthApiServer for EthAdapter {
         number_or_hash: BlockNumberOrHash,
         full: bool,
     ) -> RpcResult<Option<RichBlock>> {
-        let block = self
-            .client
-            .request_blocking("eth_getBlockByNumber", vec![])
-            .await?;
+        let block_number = match number_or_hash {
+            BlockNumberOrHash::Number(number) => number.to_string(),
+            BlockNumberOrHash::Hash(hash) => hash.to_string(),
+        };
 
-        Ok(Some(block))
+        let response = self
+            .client
+            .request_blocking("chain_getBlock", vec![serde_json::json!(block_number)])
+            .await?;
+        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let eth_block = Self::to_eth_block(substrate_block);
+        Ok(Some(eth_block))
     }
 
     async fn block_transaction_count_by_hash(&self, hash: H256) -> RpcResult<Option<U256>> {
-        unimplemented!()
+        let response = self
+            .client
+            .request_blocking("chain_getBlock", vec![serde_json::json!(hash)])
+            .await?;
+        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let tx_count = substrate_block["extrinsics"]
+            .as_array()
+            .map(|txs| U256::from(txs.len()))
+            .unwrap_or(U256::zero());
+        Ok(Some(tx_count))
     }
 
     async fn block_transaction_count_by_number(
         &self,
         number_or_hash: BlockNumberOrHash,
     ) -> RpcResult<Option<U256>> {
-        unimplemented!()
+        let block_number = match number_or_hash {
+            BlockNumberOrHash::Number(number) => number.to_string(),
+            BlockNumberOrHash::Hash(hash) => hash.to_string(),
+        };
+
+        let response = self
+            .client
+            .request_blocking("chain_getBlock", vec![serde_json::json!(block_number)])
+            .await?;
+        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let tx_count = substrate_block["extrinsics"]
+            .as_array()
+            .map(|txs| U256::from(txs.len()))
+            .unwrap_or(U256::zero());
+        Ok(Some(tx_count))
     }
 
     async fn block_transaction_receipts(
         &self,
         number_or_hash: BlockNumberOrHash,
     ) -> RpcResult<Option<Vec<Receipt>>> {
-        unimplemented!()
+        let block_number = match number_or_hash {
+            BlockNumberOrHash::Number(number) => number.to_string(),
+            BlockNumberOrHash::Hash(hash) => hash.to_string(),
+        };
+
+        let response = self
+            .client
+            .request_blocking("chain_getBlock", vec![serde_json::json!(block_number)])
+            .await?;
+        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let receipts = substrate_block["extrinsics"]
+            .as_array()
+            .map(|txs| {
+                txs.iter()
+                    .map(|tx| Self::to_eth_receipt(tx.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(Some(receipts))
     }
 
     fn block_uncles_count_by_hash(&self, hash: H256) -> RpcResult<U256> {
-        unimplemented!()
+        Ok(U256::zero()) // Substrate doesn't have uncles
     }
 
     fn block_uncles_count_by_number(&self, number_or_hash: BlockNumberOrHash) -> RpcResult<U256> {
-        unimplemented!()
+        Ok(U256::zero()) // Substrate doesn't have uncles
     }
 
     fn uncle_by_block_hash_and_index(
@@ -104,7 +317,7 @@ impl EthApiServer for EthAdapter {
         hash: H256,
         index: Index,
     ) -> RpcResult<Option<RichBlock>> {
-        unimplemented!()
+        Ok(None) // Substrate doesn't have uncles
     }
 
     fn uncle_by_block_number_and_index(
@@ -112,7 +325,7 @@ impl EthApiServer for EthAdapter {
         number_or_hash: BlockNumberOrHash,
         index: Index,
     ) -> RpcResult<Option<RichBlock>> {
-        unimplemented!()
+        Ok(None) // Substrate doesn't have uncles
     }
 
     // ########################################################################
@@ -120,7 +333,14 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     async fn transaction_by_hash(&self, hash: H256) -> RpcResult<Option<Transaction>> {
-        unimplemented!()
+        let response = self
+            .client
+            .request_blocking("chain_getTransaction", vec![serde_json::json!(hash)])
+            .await?;
+        let substrate_tx: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let eth_tx = Self::to_eth_transaction(substrate_tx);
+        Ok(Some(eth_tx))
     }
 
     async fn transaction_by_block_hash_and_index(
@@ -128,7 +348,17 @@ impl EthApiServer for EthAdapter {
         hash: H256,
         index: Index,
     ) -> RpcResult<Option<Transaction>> {
-        unimplemented!()
+        let response = self
+            .client
+            .request_blocking("chain_getBlock", vec![serde_json::json!(hash)])
+            .await?;
+        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let tx = substrate_block["extrinsics"]
+            .as_array()
+            .and_then(|txs| txs.get(index.as_usize()))
+            .map(|tx| Self::to_eth_transaction(tx.clone()));
+        Ok(tx)
     }
 
     async fn transaction_by_block_number_and_index(
@@ -136,11 +366,33 @@ impl EthApiServer for EthAdapter {
         number_or_hash: BlockNumberOrHash,
         index: Index,
     ) -> RpcResult<Option<Transaction>> {
-        unimplemented!()
+        let block_number = match number_or_hash {
+            BlockNumberOrHash::Number(number) => number.to_string(),
+            BlockNumberOrHash::Hash(hash) => hash.to_string(),
+        };
+
+        let response = self
+            .client
+            .request_blocking("chain_getBlock", vec![serde_json::json!(block_number)])
+            .await?;
+        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let tx = substrate_block["extrinsics"]
+            .as_array()
+            .and_then(|txs| txs.get(index.as_usize()))
+            .map(|tx| Self::to_eth_transaction(tx.clone()));
+        Ok(tx)
     }
 
     async fn transaction_receipt(&self, hash: H256) -> RpcResult<Option<Receipt>> {
-        unimplemented!()
+        let response = self
+            .client
+            .request_blocking("chain_getTransactionReceipt", vec![serde_json::json!(hash)])
+            .await?;
+        let substrate_receipt: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let eth_receipt = Self::to_eth_receipt(substrate_receipt);
+        Ok(Some(eth_receipt))
     }
 
     // ########################################################################
@@ -152,7 +404,17 @@ impl EthApiServer for EthAdapter {
         address: H160,
         number_or_hash: Option<BlockNumberOrHash>,
     ) -> RpcResult<U256> {
-        unimplemented!()
+        let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
+        let response = self
+            .client
+            .request_blocking(
+                "state_getBalance",
+                vec![serde_json::json!(address), serde_json::json!(block)],
+            )
+            .await?;
+        let balance: U256 = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        Ok(balance)
     }
 
     async fn storage_at(
@@ -161,7 +423,21 @@ impl EthApiServer for EthAdapter {
         index: U256,
         number_or_hash: Option<BlockNumberOrHash>,
     ) -> RpcResult<H256> {
-        unimplemented!()
+        let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
+        let response = self
+            .client
+            .request_blocking(
+                "state_getStorageAt",
+                vec![
+                    serde_json::json!(address),
+                    serde_json::json!(index),
+                    serde_json::json!(block),
+                ],
+            )
+            .await?;
+        let storage: H256 = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        Ok(storage)
     }
 
     async fn transaction_count(
@@ -169,7 +445,17 @@ impl EthApiServer for EthAdapter {
         address: H160,
         number_or_hash: Option<BlockNumberOrHash>,
     ) -> RpcResult<U256> {
-        unimplemented!()
+        let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
+        let response = self
+            .client
+            .request_blocking(
+                "state_getTransactionCount",
+                vec![serde_json::json!(address), serde_json::json!(block)],
+            )
+            .await?;
+        let count: U256 = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        Ok(count)
     }
 
     async fn code_at(
@@ -177,7 +463,17 @@ impl EthApiServer for EthAdapter {
         address: H160,
         number_or_hash: Option<BlockNumberOrHash>,
     ) -> RpcResult<Bytes> {
-        unimplemented!()
+        let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
+        let response = self
+            .client
+            .request_blocking(
+                "state_getCode",
+                vec![serde_json::json!(address), serde_json::json!(block)],
+            )
+            .await?;
+        let code: Bytes = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        Ok(code)
     }
 
     // ########################################################################
@@ -190,7 +486,17 @@ impl EthApiServer for EthAdapter {
         number_or_hash: Option<BlockNumberOrHash>,
         state_overrides: Option<BTreeMap<H160, CallStateOverride>>,
     ) -> RpcResult<Bytes> {
-        unimplemented!()
+        let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
+        let response = self
+            .client
+            .request_blocking(
+                "state_call",
+                vec![serde_json::json!(request), serde_json::json!(block)],
+            )
+            .await?;
+        let result: Bytes = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        Ok(result)
     }
 
     async fn estimate_gas(
@@ -198,7 +504,17 @@ impl EthApiServer for EthAdapter {
         request: TransactionRequest,
         number_or_hash: Option<BlockNumberOrHash>,
     ) -> RpcResult<U256> {
-        unimplemented!()
+        let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
+        let response = self
+            .client
+            .request_blocking(
+                "state_estimateGas",
+                vec![serde_json::json!(request), serde_json::json!(block)],
+            )
+            .await?;
+        let gas: U256 = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        Ok(gas)
     }
 
     // ########################################################################
@@ -206,7 +522,13 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     fn gas_price(&self) -> RpcResult<U256> {
-        unimplemented!()
+        let response = self
+            .client
+            .request_blocking("eth_gasPrice", vec![])
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let gas_price: U256 = serde_json::from_str(&response)
+            .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        Ok(gas_price)
     }
 
     async fn fee_history(
@@ -215,11 +537,11 @@ impl EthApiServer for EthAdapter {
         newest_block: BlockNumberOrHash,
         reward_percentiles: Option<Vec<f64>>,
     ) -> RpcResult<FeeHistory> {
-        unimplemented!()
+        unimplemented!() // Not required for Milestone 1
     }
 
     fn max_priority_fee_per_gas(&self) -> RpcResult<U256> {
-        unimplemented!()
+        unimplemented!() // Not required for Milestone 1
     }
 
     // ########################################################################
@@ -227,23 +549,23 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     fn is_mining(&self) -> RpcResult<bool> {
-        unimplemented!()
+        Ok(false) // Substrate doesn't have mining
     }
 
     fn hashrate(&self) -> RpcResult<U256> {
-        unimplemented!()
+        Ok(U256::zero()) // Substrate doesn't have mining
     }
 
     fn work(&self) -> RpcResult<Work> {
-        unimplemented!()
+        unimplemented!() // Not required for Milestone 1
     }
 
     fn submit_hashrate(&self, hashrate: U256, id: H256) -> RpcResult<bool> {
-        unimplemented!()
+        Ok(false) // Substrate doesn't have mining
     }
 
     fn submit_work(&self, nonce: H64, pow_hash: H256, mix_digest: H256) -> RpcResult<bool> {
-        unimplemented!()
+        Ok(false) // Substrate doesn't have mining
     }
 
     // ########################################################################
@@ -251,10 +573,10 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     async fn send_transaction(&self, request: TransactionRequest) -> RpcResult<H256> {
-        unimplemented!()
+        unimplemented!() // Not required for Milestone 1
     }
 
     async fn send_raw_transaction(&self, bytes: Bytes) -> RpcResult<H256> {
-        unimplemented!()
+        unimplemented!() // Not required for Milestone 1
     }
 }

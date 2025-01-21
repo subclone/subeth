@@ -96,6 +96,7 @@ impl SubLightClient {
             .json_rpc_request(request_str, self.chain_id)
             .unwrap();
 
+        self.client.with_subscriber(subscriber)
         // wait for the response
     }
 }
