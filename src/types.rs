@@ -1,5 +1,6 @@
 //! Primitive types used in the library.
 
+use jsonrpsee::types::ErrorObject;
 use serde::{Deserialize, Serialize};
 use smoldot_light::HandleRpcError;
 
@@ -61,9 +62,19 @@ impl From<jsonrpsee::types::ErrorObjectOwned> for SubEthError {
     }
 }
 
-impl From<jsonrpsee::types::ErrorObject> for SubEthError {
-    fn from(e: jsonrpsee::types::ErrorObject) -> Self {
-        log::error!("Error: {:?}", e);
-        SubEthError::ResponseFailed
+// impl From<jsonrpsee::types::ErrorObject> for SubEthError {
+//     fn from(e: jsonrpsee::types::ErrorObject) -> Self {
+//         log::error!("Error: {:?}", e);
+//         SubEthError::ResponseFailed
+//     }
+// }
+
+impl From<SubEthError> for ErrorObject<'_> {
+    fn from(error: SubEthError) -> Self {
+        match error {
+            SubEthError::RequestFailed(msg) => ErrorObject::owned(500, msg, None::<()>),
+            SubEthError::ResponseFailed => ErrorObject::owned(500, "Response failed", None::<()>),
+            SubEthError::SerdeError(msg) => ErrorObject::owned(500, msg, None::<()>),
+        }
     }
 }

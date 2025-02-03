@@ -3,7 +3,7 @@
 use crate::smoldot::SubLightClient;
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(clap::Parser)]
 #[clap(version = "0.1", author = "Subeth")]
 struct Opts {
     /// Chain specification file

@@ -29,4 +29,5 @@ tokio = { version = "1", features = ["rt", "macros", "time", "rt-multi-thread"] 
 # evm dependencies
 fc-rpc-core = { git = "https://github.com/polkadot-evm/frontier.git" }
 fc-rpc = { git = "https://github.com/polkadot-evm/frontier.git" }
-clap = "4.5.21"
+clap = { version = "4.5.21", features = ["derive", "env"] }
+futures = "0.3.31"

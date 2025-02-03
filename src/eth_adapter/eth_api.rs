@@ -1,12 +1,14 @@
-use std::collections::BTreeMap;
-
 use super::*;
-use ethereum_types::{H160, H256, H64, U256, U64};
+use ethereum_types::{Bloom, H160, H256, H64, U256, U64};
 use fc_rpc_core::types::*;
+use futures::StreamExt;
 use jsonrpsee::{
     core::{async_trait, RpcResult},
     types::ErrorObject,
 };
+use serde::Serialize;
+use std::collections::BTreeMap;
+use std::str::FromStr;
 
 /// ETH RPC adapter
 pub struct EthAdapter {
@@ -21,53 +23,62 @@ impl EthAdapter {
 
     /// Helper function to convert Substrate block to Ethereum block
     fn to_eth_block(substrate_block: serde_json::Value) -> RichBlock {
-        let block_number =
-            U256::from_str(&substrate_block["header"]["number"].to_string()).unwrap();
-        let block_hash = H256::from_str(&substrate_block["hash"].to_string()).unwrap();
-        let parent_hash =
-            H256::from_str(&substrate_block["header"]["parentHash"].to_string()).unwrap();
-        let author = H160::from_str(&substrate_block["header"]["author"].to_string()).unwrap();
-        let timestamp =
-            U256::from_str(&substrate_block["header"]["timestamp"].to_string()).unwrap();
+        let block_number = U256::from_str(&substrate_block["header"]["number"].to_string())
+            .unwrap_or(U256::zero());
+        let block_hash =
+            H256::from_str(&substrate_block["hash"].to_string()).unwrap_or(H256::zero());
+        let parent_hash = H256::from_str(&substrate_block["header"]["parentHash"].to_string())
+            .unwrap_or(H256::zero());
+        let author = H160::from_str(&substrate_block["header"]["author"].to_string())
+            .unwrap_or(H160::zero());
+        let timestamp = U256::from_str(&substrate_block["header"]["timestamp"].to_string())
+            .unwrap_or(U256::zero());
         let transactions = substrate_block["extrinsics"]
             .as_array()
             .map(|txs| {
                 txs.iter()
-                    .map(|tx| to_eth_transaction(tx.clone()))
+                    .map(|tx| Self::to_eth_transaction(tx.clone()))
                     .collect()
             })
             .unwrap_or_default();
 
         RichBlock {
-            block: Block {
-                number: Some(block_number),
-                hash: Some(block_hash),
-                parent_hash,
-                nonce: None,                     // Substrate doesn't have nonce
-                sha3_uncles: H256::zero(),       // Substrate doesn't have uncles
-                logs_bloom: None,                // Substrate doesn't have logs bloom
-                transactions_root: H256::zero(), // Not applicable
-                state_root: H256::from_str(&substrate_block["header"]["stateRoot"].to_string())
-                    .unwrap(),
-                receipts_root: H256::zero(), // Not applicable
-                miner: author,
-                difficulty: U256::zero(), // Substrate doesn't have difficulty
-                total_difficulty: U256::zero(), // Substrate doesn't have total difficulty
-                extra_data: None,         // Not applicable
-                size: None,               // Not applicable
-                gas_limit: U256::zero(),  // Substrate doesn't have gas limit
-                gas_used: U256::zero(),   // Substrate doesn't have gas used
-                timestamp,
+            inner: Block {
+                header: Header {
+                    number: Some(block_number),
+                    hash: Some(block_hash),
+                    parent_hash,
+                    nonce: None,
+                    logs_bloom: Bloom::default(),
+                    transactions_root: H256::zero(),
+                    state_root: H256::from_str(&substrate_block["header"]["stateRoot"].to_string())
+                        .unwrap_or(H256::zero()),
+                    receipts_root: H256::zero(),
+                    miner: Some(author),
+                    difficulty: U256::zero(),
+                    extra_data: Bytes::default(),
+                    size: None,
+                    gas_limit: U256::zero(),
+                    gas_used: U256::zero(),
+                    timestamp,
+                    uncles_hash: H256::zero(),
+                    author: author,
+                },
+                size: Some(U256::zero()),
+                base_fee_per_gas: None,
+                total_difficulty: Some(U256::zero()),
                 transactions,
-                uncles: Vec::new(), // Substrate doesn't have uncles
+                uncles: Vec::new(),
             },
+            extra_info: BTreeMap::new(),
         }
     }
 
     /// Helper function to convert Substrate transaction to Ethereum transaction
     fn to_eth_transaction(substrate_tx: serde_json::Value) -> Transaction {
-        let tx_hash = H256::from_str(&substrate_tx["hash"].to_string()).unwrap();
-        let from = H160::from_str(&substrate_tx["signature"]["address"].to_string()).unwrap();
+        let tx_hash = H256::from_str(&substrate_tx["hash"].to_string()).unwrap_or(H256::zero());
+        let from = H160::from_str(&substrate_tx["signature"]["address"].to_string())
+            .unwrap_or(H160::zero());
         let to = H160::from_str(&substrate_tx["call"]["to"].to_string()).unwrap_or(H160::zero());
         let value =
             U256::from_str(&substrate_tx["call"]["value"].to_string()).unwrap_or(U256::zero());
@@ -81,59 +92,66 @@ impl EthAdapter {
 
         Transaction {
             hash: tx_hash,
-            nonce: U256::zero(),     // Substrate doesn't have nonce
-            block_hash: None,        // Will be filled later
-            block_number: None,      // Will be filled later
-            transaction_index: None, // Will be filled later
+            nonce: U256::zero(),
+            block_hash: None,
+            block_number: None,
+            transaction_index: None,
             from,
             to: Some(to),
             value,
-            gas_price,
+            gas_price: Some(gas_price),
             gas,
             input: input.into(),
-            v: U256::zero(), // Substrate doesn't have v
-            r: H256::zero(), // Substrate doesn't have r
-            s: H256::zero(), // Substrate doesn't have s
+            v: Some(U256::zero()),
+            r: U256::zero(),
+            s: U256::zero(),
+            ..Default::default()
         }
     }
 
     /// Helper function to convert Substrate receipt to Ethereum receipt
     fn to_eth_receipt(substrate_receipt: serde_json::Value) -> Receipt {
-        let tx_hash = H256::from_str(&substrate_receipt["transactionHash"].to_string()).unwrap();
-        let block_hash = H256::from_str(&substrate_receipt["blockHash"].to_string()).unwrap();
-        let block_number = U256::from_str(&substrate_receipt["blockNumber"].to_string()).unwrap();
+        let tx_hash = H256::from_str(&substrate_receipt["transactionHash"].to_string())
+            .unwrap_or(H256::zero());
+        let block_hash =
+            H256::from_str(&substrate_receipt["blockHash"].to_string()).unwrap_or(H256::zero());
+        let block_number =
+            U256::from_str(&substrate_receipt["blockNumber"].to_string()).unwrap_or(U256::zero());
         let gas_used =
             U256::from_str(&substrate_receipt["gasUsed"].to_string()).unwrap_or(U256::zero());
         let status =
             U256::from_str(&substrate_receipt["status"].to_string()).unwrap_or(U256::zero());
         let logs = substrate_receipt["logs"]
             .as_array()
-            .map(|logs| logs.iter().map(|log| to_eth_log(log.clone())).collect())
+            .map(|logs| {
+                logs.iter()
+                    .map(|log| Self::to_eth_log(log.clone()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         Receipt {
-            transaction_hash: tx_hash,
-            transaction_index: U256::zero(), // Not applicable
+            transaction_hash: Some(tx_hash),
+            transaction_index: Some(U256::zero()),
             block_hash: Some(block_hash),
             block_number: Some(block_number),
             cumulative_gas_used: gas_used,
             gas_used: Some(gas_used),
-            contract_address: None, // Substrate doesn't have contract addresses
+            contract_address: None,
             logs,
-            status: Some(status),
-            root: None,       // Not applicable
-            logs_bloom: None, // Substrate doesn't have logs bloom
+            logs_bloom: Bloom::default(),
+            ..Default::default()
         }
     }
 
     fn to_eth_log(substrate_log: serde_json::Value) -> Log {
-        let address = H160::from_str(&substrate_log["address"].to_string()).unwrap();
+        let address = H160::from_str(&substrate_log["address"].to_string()).unwrap_or(H160::zero());
         let topics = substrate_log["topics"]
             .as_array()
             .map(|topics| {
                 topics
                     .iter()
-                    .map(|topic| H256::from_str(&topic.to_string()).unwrap())
+                    .map(|topic| H256::from_str(&topic.to_string()).unwrap_or(H256::zero()))
                     .collect()
             })
             .unwrap_or_default();
@@ -146,12 +164,13 @@ impl EthAdapter {
             address,
             topics,
             data: data.into(),
-            block_hash: None,        // Will be filled later
-            block_number: None,      // Will be filled later
-            transaction_hash: None,  // Will be filled later
-            transaction_index: None, // Will be filled later
-            log_index: None,         // Will be filled later
-            removed: false,          // Not applicable
+            block_hash: None,
+            block_number: None,
+            transaction_hash: None,
+            transaction_index: None,
+            log_index: None,
+            removed: false,
+            transaction_log_index: None,
         }
     }
 }
