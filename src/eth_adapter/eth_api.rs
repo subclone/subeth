@@ -1,28 +1,37 @@
 use super::*;
 use ethereum_types::{Bloom, H160, H256, H64, U256, U64};
 use fc_rpc_core::types::*;
-use futures::StreamExt;
+use futures::{lock::Mutex, StreamExt};
 use jsonrpsee::{
     core::{async_trait, RpcResult},
     types::ErrorObject,
 };
 use serde::Serialize;
-use std::collections::BTreeMap;
-use std::str::FromStr;
+use std::{borrow::BorrowMut, collections::BTreeMap, sync::Arc};
+use std::{cell::RefCell, str::FromStr};
 
 /// ETH RPC adapter
 pub struct EthAdapter {
-    client: SubLightClient,
+    client: Mutex<SubLightClient>,
 }
 
 impl EthAdapter {
     /// Create a new instance of the ETH adapter
     pub fn new(client: SubLightClient) -> Self {
-        Self { client }
+        Self {
+            client: Mutex::new(client),
+        }
+    }
+
+    /// Get the inner client, with mutable reference
+    async fn client_mut(&self) -> &mut SubLightClient {
+        self.client.lock().await
     }
 
     /// Helper function to convert Substrate block to Ethereum block
     fn to_eth_block(substrate_block: serde_json::Value) -> RichBlock {
+        let header = RichHeader::from(substrate_block.get("header").unwrap());
+
         let block_number = U256::from_str(&substrate_block["header"]["number"].to_string())
             .unwrap_or(U256::zero());
         let block_hash =
@@ -190,6 +199,8 @@ impl EthApiServer for EthAdapter {
         // Query sync status from substrate
         let status = self
             .client
+            .lock()
+            .await
             .request_blocking("system_syncState", vec![])
             .await
             .map_err(|e| ErrorObject::from(e))?;

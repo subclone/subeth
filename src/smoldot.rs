@@ -64,12 +64,13 @@ impl SubLightClient {
     pub async fn request_blocking(
         &mut self,
         method: &'static str,
-        _params: Vec<serde_json::Value>,
+        params: Vec<&'static str>,
     ) -> Result<String, SubEthError> {
         // add the method to the request
         let request_str = format!(
-            r#"{{"jsonrpc":"2.0","method":"{}","params":[],"id":1}}"#,
+            r#"{{"jsonrpc":"2.0","method":"{}","params":[{}],"id":1}}"#,
             method,
+            params.join(","),
         );
 
         self.client.json_rpc_request(request_str, self.chain_id)?;
@@ -85,7 +86,7 @@ impl SubLightClient {
     /// Subscription is a little different from the request, as it is a stream of responses
     /// that are received from the client. So we should spawn a thread to listen to the responses
     /// and return the stream to the caller.
-    fn subscribe(&self, method: &'static str, params: Vec<serde_json::Value>) {
+    fn subscribe(&mut self, method: &'static str, params: Vec<serde_json::Value>) {
         // add the method to the request
         let request_str = format!(
             r#"{{"jsonrpc":"2.0","method":"{}","params":[],"id":1}}"#,
