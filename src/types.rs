@@ -9,7 +9,15 @@ pub(crate) struct PalletContractMapping;
 
 impl PalletContractMapping {
     /// Get the contract address for a given pallet
-    pub fn get_contract_address(pallet: &str) -> Option<&str> {}
+    pub fn get_contract_address(pallet: &str) -> Option<String> {
+        match pallet {
+            "Balances" => Some("0x1".repeat(20)),
+            "Contracts" => Some("0x2".repeat(20)),
+            "Sudo" => Some("0x3".repeat(20)),
+            "System" => Some("0x4".repeat(20)),
+            _ => None,
+        }
+    }
 }
 
 /// General error type for the Subeth library.

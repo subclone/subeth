@@ -23,11 +23,6 @@ impl EthAdapter {
         }
     }
 
-    /// Get the inner client, with mutable reference
-    async fn client_mut(&self) -> &mut SubLightClient {
-        self.client.lock().await
-    }
-
     /// Helper function to convert Substrate block to Ethereum block
     fn to_eth_block(substrate_block: serde_json::Value) -> RichBlock {
         let header = RichHeader::from(substrate_block.get("header").unwrap());
@@ -206,7 +201,8 @@ impl EthApiServer for EthAdapter {
             .map_err(|e| ErrorObject::from(e))?;
 
         // Parse response and convert to ETH sync status
-        Ok(SyncStatus::None)
+
+        Ok(sync_status)
     }
 
     fn author(&self) -> RpcResult<H160> {
@@ -220,10 +216,13 @@ impl EthApiServer for EthAdapter {
     async fn block_number(&self) -> RpcResult<U256> {
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getBlock", vec![])
             .await?;
-        let block_number: U256 = serde_json::from_str(&response)
+        let block_number = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+
         Ok(block_number)
     }
 
