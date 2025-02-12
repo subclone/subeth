@@ -6,13 +6,74 @@ use jsonrpsee::{
     core::{async_trait, RpcResult},
     types::ErrorObject,
 };
-use serde::Serialize;
+use serde::Deserialize;
 use std::{borrow::BorrowMut, collections::BTreeMap, sync::Arc};
 use std::{cell::RefCell, str::FromStr};
 
 /// ETH RPC adapter
 pub struct EthAdapter {
     client: Mutex<SubLightClient>,
+}
+
+/// Substrate block structure
+#[derive(Deserialize)]
+struct SubstrateBlock {
+    header: SubstrateHeader,
+    hash: String,
+    extrinsics: Vec<SubstrateTransaction>,
+}
+
+/// Substrate header structure
+#[derive(Deserialize)]
+struct SubstrateHeader {
+    number: String,
+    parent_hash: String,
+    author: String,
+    timestamp: String,
+    state_root: String,
+}
+
+/// Substrate transaction structure
+#[derive(Deserialize)]
+struct SubstrateTransaction {
+    hash: String,
+    signature: SubstrateSignature,
+    call: SubstrateCall,
+}
+
+/// Substrate signature structure
+#[derive(Deserialize)]
+struct SubstrateSignature {
+    address: String,
+}
+
+/// Substrate call structure
+#[derive(Deserialize)]
+struct SubstrateCall {
+    to: String,
+    value: String,
+    gas: String,
+    gas_price: String,
+    input: Option<String>,
+}
+
+/// Substrate receipt structure
+#[derive(Deserialize)]
+struct SubstrateReceipt {
+    transaction_hash: String,
+    block_hash: String,
+    block_number: String,
+    gas_used: String,
+    status: String,
+    logs: Vec<SubstrateLog>,
+}
+
+/// Substrate log structure
+#[derive(Deserialize)]
+struct SubstrateLog {
+    address: String,
+    topics: Vec<String>,
+    data: Option<String>,
 }
 
 impl EthAdapter {
@@ -24,27 +85,20 @@ impl EthAdapter {
     }
 
     /// Helper function to convert Substrate block to Ethereum block
-    fn to_eth_block(substrate_block: serde_json::Value) -> RichBlock {
-        let header = RichHeader::from(substrate_block.get("header").unwrap());
+    fn to_eth_block(substrate_block: SubstrateBlock) -> RichBlock {
+        let header = RichHeader::from(&substrate_block.header);
 
-        let block_number = U256::from_str(&substrate_block["header"]["number"].to_string())
-            .unwrap_or(U256::zero());
-        let block_hash =
-            H256::from_str(&substrate_block["hash"].to_string()).unwrap_or(H256::zero());
-        let parent_hash = H256::from_str(&substrate_block["header"]["parentHash"].to_string())
-            .unwrap_or(H256::zero());
-        let author = H160::from_str(&substrate_block["header"]["author"].to_string())
-            .unwrap_or(H160::zero());
-        let timestamp = U256::from_str(&substrate_block["header"]["timestamp"].to_string())
-            .unwrap_or(U256::zero());
-        let transactions = substrate_block["extrinsics"]
-            .as_array()
-            .map(|txs| {
-                txs.iter()
-                    .map(|tx| Self::to_eth_transaction(tx.clone()))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let block_number = U256::from_str(&substrate_block.header.number).unwrap_or(U256::zero());
+        let block_hash = H256::from_str(&substrate_block.hash).unwrap_or(H256::zero());
+        let parent_hash =
+            H256::from_str(&substrate_block.header.parent_hash).unwrap_or(H256::zero());
+        let author = H160::from_str(&substrate_block.header.author).unwrap_or(H160::zero());
+        let timestamp = U256::from_str(&substrate_block.header.timestamp).unwrap_or(U256::zero());
+        let transactions = substrate_block
+            .extrinsics
+            .into_iter()
+            .map(Self::to_eth_transaction)
+            .collect();
 
         RichBlock {
             inner: Block {
@@ -55,7 +109,7 @@ impl EthAdapter {
                     nonce: None,
                     logs_bloom: Bloom::default(),
                     transactions_root: H256::zero(),
-                    state_root: H256::from_str(&substrate_block["header"]["stateRoot"].to_string())
+                    state_root: H256::from_str(&substrate_block.header.state_root)
                         .unwrap_or(H256::zero()),
                     receipts_root: H256::zero(),
                     miner: Some(author),
@@ -79,18 +133,16 @@ impl EthAdapter {
     }
 
     /// Helper function to convert Substrate transaction to Ethereum transaction
-    fn to_eth_transaction(substrate_tx: serde_json::Value) -> Transaction {
-        let tx_hash = H256::from_str(&substrate_tx["hash"].to_string()).unwrap_or(H256::zero());
-        let from = H160::from_str(&substrate_tx["signature"]["address"].to_string())
-            .unwrap_or(H160::zero());
-        let to = H160::from_str(&substrate_tx["call"]["to"].to_string()).unwrap_or(H160::zero());
-        let value =
-            U256::from_str(&substrate_tx["call"]["value"].to_string()).unwrap_or(U256::zero());
-        let gas = U256::from_str(&substrate_tx["call"]["gas"].to_string()).unwrap_or(U256::zero());
-        let gas_price =
-            U256::from_str(&substrate_tx["call"]["gasPrice"].to_string()).unwrap_or(U256::zero());
-        let input = substrate_tx["call"]["input"]
-            .as_str()
+    fn to_eth_transaction(substrate_tx: SubstrateTransaction) -> Transaction {
+        let tx_hash = H256::from_str(&substrate_tx.hash).unwrap_or(H256::zero());
+        let from = H160::from_str(&substrate_tx.signature.address).unwrap_or(H160::zero());
+        let to = H160::from_str(&substrate_tx.call.to).unwrap_or(H160::zero());
+        let value = U256::from_str(&substrate_tx.call.value).unwrap_or(U256::zero());
+        let gas = U256::from_str(&substrate_tx.call.gas).unwrap_or(U256::zero());
+        let gas_price = U256::from_str(&substrate_tx.call.gas_price).unwrap_or(U256::zero());
+        let input = substrate_tx
+            .call
+            .input
             .map(|s| s.as_bytes().to_vec())
             .unwrap_or_default();
 
@@ -114,25 +166,17 @@ impl EthAdapter {
     }
 
     /// Helper function to convert Substrate receipt to Ethereum receipt
-    fn to_eth_receipt(substrate_receipt: serde_json::Value) -> Receipt {
-        let tx_hash = H256::from_str(&substrate_receipt["transactionHash"].to_string())
-            .unwrap_or(H256::zero());
-        let block_hash =
-            H256::from_str(&substrate_receipt["blockHash"].to_string()).unwrap_or(H256::zero());
-        let block_number =
-            U256::from_str(&substrate_receipt["blockNumber"].to_string()).unwrap_or(U256::zero());
-        let gas_used =
-            U256::from_str(&substrate_receipt["gasUsed"].to_string()).unwrap_or(U256::zero());
-        let status =
-            U256::from_str(&substrate_receipt["status"].to_string()).unwrap_or(U256::zero());
-        let logs = substrate_receipt["logs"]
-            .as_array()
-            .map(|logs| {
-                logs.iter()
-                    .map(|log| Self::to_eth_log(log.clone()))
-                    .collect()
-            })
-            .unwrap_or_default();
+    fn to_eth_receipt(substrate_receipt: SubstrateReceipt) -> Receipt {
+        let tx_hash = H256::from_str(&substrate_receipt.transaction_hash).unwrap_or(H256::zero());
+        let block_hash = H256::from_str(&substrate_receipt.block_hash).unwrap_or(H256::zero());
+        let block_number = U256::from_str(&substrate_receipt.block_number).unwrap_or(U256::zero());
+        let gas_used = U256::from_str(&substrate_receipt.gas_used).unwrap_or(U256::zero());
+        let status = U256::from_str(&substrate_receipt.status).unwrap_or(U256::zero());
+        let logs = substrate_receipt
+            .logs
+            .into_iter()
+            .map(Self::to_eth_log)
+            .collect();
 
         Receipt {
             transaction_hash: Some(tx_hash),
@@ -148,19 +192,16 @@ impl EthAdapter {
         }
     }
 
-    fn to_eth_log(substrate_log: serde_json::Value) -> Log {
-        let address = H160::from_str(&substrate_log["address"].to_string()).unwrap_or(H160::zero());
-        let topics = substrate_log["topics"]
-            .as_array()
-            .map(|topics| {
-                topics
-                    .iter()
-                    .map(|topic| H256::from_str(&topic.to_string()).unwrap_or(H256::zero()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let data = substrate_log["data"]
-            .as_str()
+    /// Helper function to convert Substrate log to Ethereum log
+    fn to_eth_log(substrate_log: SubstrateLog) -> Log {
+        let address = H160::from_str(&substrate_log.address).unwrap_or(H160::zero());
+        let topics = substrate_log
+            .topics
+            .into_iter()
+            .map(|topic| H256::from_str(&topic).unwrap_or(H256::zero()))
+            .collect();
+        let data = substrate_log
+            .data
             .map(|s| s.as_bytes().to_vec())
             .unwrap_or_default();
 
@@ -176,6 +217,28 @@ impl EthAdapter {
             removed: false,
             transaction_log_index: None,
         }
+    }
+
+    /// Parse a JSON value into a SubstrateBlock
+    fn parse_substrate_block(json_value: serde_json::Value) -> Result<SubstrateBlock, String> {
+        serde_json::from_value(json_value).map_err(|e| e.to_string())
+    }
+
+    /// Parse a JSON value into a SubstrateTransaction
+    fn parse_substrate_transaction(
+        json_value: serde_json::Value,
+    ) -> Result<SubstrateTransaction, String> {
+        serde_json::from_value(json_value).map_err(|e| e.to_string())
+    }
+
+    /// Parse a JSON value into a SubstrateReceipt
+    fn parse_substrate_receipt(json_value: serde_json::Value) -> Result<SubstrateReceipt, String> {
+        serde_json::from_value(json_value).map_err(|e| e.to_string())
+    }
+
+    /// Parse a JSON value into a SubstrateLog
+    fn parse_substrate_log(json_value: serde_json::Value) -> Result<SubstrateLog, String> {
+        serde_json::from_value(json_value).map_err(|e| e.to_string())
     }
 }
 
@@ -201,7 +264,6 @@ impl EthApiServer for EthAdapter {
             .map_err(|e| ErrorObject::from(e))?;
 
         // Parse response and convert to ETH sync status
-
         Ok(sync_status)
     }
 
@@ -243,10 +305,14 @@ impl EthApiServer for EthAdapter {
     async fn block_by_hash(&self, hash: H256, full: bool) -> RpcResult<Option<RichBlock>> {
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getBlock", vec![serde_json::json!(hash)])
             .await?;
-        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+        let substrate_block_json: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let substrate_block = Self::parse_substrate_block(substrate_block_json)
+            .map_err(|e| ErrorObject::owned(500, "Failed to parse block", Some(e)))?;
         let eth_block = Self::to_eth_block(substrate_block);
         Ok(Some(eth_block))
     }
@@ -263,10 +329,14 @@ impl EthApiServer for EthAdapter {
 
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getBlock", vec![serde_json::json!(block_number)])
             .await?;
-        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+        let substrate_block_json: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let substrate_block = Self::parse_substrate_block(substrate_block_json)
+            .map_err(|e| ErrorObject::owned(500, "Failed to parse block", Some(e)))?;
         let eth_block = Self::to_eth_block(substrate_block);
         Ok(Some(eth_block))
     }
@@ -274,14 +344,15 @@ impl EthApiServer for EthAdapter {
     async fn block_transaction_count_by_hash(&self, hash: H256) -> RpcResult<Option<U256>> {
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getBlock", vec![serde_json::json!(hash)])
             .await?;
-        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+        let substrate_block_json: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
-        let tx_count = substrate_block["extrinsics"]
-            .as_array()
-            .map(|txs| U256::from(txs.len()))
-            .unwrap_or(U256::zero());
+        let substrate_block = Self::parse_substrate_block(substrate_block_json)
+            .map_err(|e| ErrorObject::owned(500, "Failed to parse block", Some(e)))?;
+        let tx_count = U256::from(substrate_block.extrinsics.len());
         Ok(Some(tx_count))
     }
 
@@ -296,14 +367,15 @@ impl EthApiServer for EthAdapter {
 
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getBlock", vec![serde_json::json!(block_number)])
             .await?;
-        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+        let substrate_block_json: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
-        let tx_count = substrate_block["extrinsics"]
-            .as_array()
-            .map(|txs| U256::from(txs.len()))
-            .unwrap_or(U256::zero());
+        let substrate_block = Self::parse_substrate_block(substrate_block_json)
+            .map_err(|e| ErrorObject::owned(500, "Failed to parse block", Some(e)))?;
+        let tx_count = U256::from(substrate_block.extrinsics.len());
         Ok(Some(tx_count))
     }
 
@@ -318,18 +390,24 @@ impl EthApiServer for EthAdapter {
 
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getBlock", vec![serde_json::json!(block_number)])
             .await?;
-        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+        let substrate_block_json: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
-        let receipts = substrate_block["extrinsics"]
-            .as_array()
-            .map(|txs| {
-                txs.iter()
-                    .map(|tx| Self::to_eth_receipt(tx.clone()))
-                    .collect()
+        let substrate_block = Self::parse_substrate_block(substrate_block_json)
+            .map_err(|e| ErrorObject::owned(500, "Failed to parse block", Some(e)))?;
+        let receipts = substrate_block
+            .extrinsics
+            .into_iter()
+            .map(|tx| {
+                let receipt_json = serde_json::to_value(tx).unwrap();
+                Self::parse_substrate_receipt(receipt_json)
+                    .map(Self::to_eth_receipt)
+                    .unwrap_or_default()
             })
-            .unwrap_or_default();
+            .collect();
         Ok(Some(receipts))
     }
 
@@ -364,10 +442,14 @@ impl EthApiServer for EthAdapter {
     async fn transaction_by_hash(&self, hash: H256) -> RpcResult<Option<Transaction>> {
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getTransaction", vec![serde_json::json!(hash)])
             .await?;
-        let substrate_tx: serde_json::Value = serde_json::from_str(&response)
+        let substrate_tx_json: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let substrate_tx = Self::parse_substrate_transaction(substrate_tx_json)
+            .map_err(|e| ErrorObject::owned(500, "Failed to parse transaction", Some(e)))?;
         let eth_tx = Self::to_eth_transaction(substrate_tx);
         Ok(Some(eth_tx))
     }
@@ -379,13 +461,17 @@ impl EthApiServer for EthAdapter {
     ) -> RpcResult<Option<Transaction>> {
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getBlock", vec![serde_json::json!(hash)])
             .await?;
-        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+        let substrate_block_json: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
-        let tx = substrate_block["extrinsics"]
-            .as_array()
-            .and_then(|txs| txs.get(index.as_usize()))
+        let substrate_block = Self::parse_substrate_block(substrate_block_json)
+            .map_err(|e| ErrorObject::owned(500, "Failed to parse block", Some(e)))?;
+        let tx = substrate_block
+            .extrinsics
+            .get(index.as_usize())
             .map(|tx| Self::to_eth_transaction(tx.clone()));
         Ok(tx)
     }
@@ -402,13 +488,17 @@ impl EthApiServer for EthAdapter {
 
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getBlock", vec![serde_json::json!(block_number)])
             .await?;
-        let substrate_block: serde_json::Value = serde_json::from_str(&response)
+        let substrate_block_json: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
-        let tx = substrate_block["extrinsics"]
-            .as_array()
-            .and_then(|txs| txs.get(index.as_usize()))
+        let substrate_block = Self::parse_substrate_block(substrate_block_json)
+            .map_err(|e| ErrorObject::owned(500, "Failed to parse block", Some(e)))?;
+        let tx = substrate_block
+            .extrinsics
+            .get(index.as_usize())
             .map(|tx| Self::to_eth_transaction(tx.clone()));
         Ok(tx)
     }
@@ -416,10 +506,14 @@ impl EthApiServer for EthAdapter {
     async fn transaction_receipt(&self, hash: H256) -> RpcResult<Option<Receipt>> {
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("chain_getTransactionReceipt", vec![serde_json::json!(hash)])
             .await?;
-        let substrate_receipt: serde_json::Value = serde_json::from_str(&response)
+        let substrate_receipt_json: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
+        let substrate_receipt = Self::parse_substrate_receipt(substrate_receipt_json)
+            .map_err(|e| ErrorObject::owned(500, "Failed to parse receipt", Some(e)))?;
         let eth_receipt = Self::to_eth_receipt(substrate_receipt);
         Ok(Some(eth_receipt))
     }
@@ -436,6 +530,8 @@ impl EthApiServer for EthAdapter {
         let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking(
                 "state_getBalance",
                 vec![serde_json::json!(address), serde_json::json!(block)],
@@ -455,6 +551,8 @@ impl EthApiServer for EthAdapter {
         let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking(
                 "state_getStorageAt",
                 vec![
@@ -477,6 +575,8 @@ impl EthApiServer for EthAdapter {
         let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking(
                 "state_getTransactionCount",
                 vec![serde_json::json!(address), serde_json::json!(block)],
@@ -495,6 +595,8 @@ impl EthApiServer for EthAdapter {
         let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking(
                 "state_getCode",
                 vec![serde_json::json!(address), serde_json::json!(block)],
@@ -518,6 +620,8 @@ impl EthApiServer for EthAdapter {
         let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking(
                 "state_call",
                 vec![serde_json::json!(request), serde_json::json!(block)],
@@ -536,6 +640,8 @@ impl EthApiServer for EthAdapter {
         let block = number_or_hash.unwrap_or(BlockNumberOrHash::Number(BlockNumber::Latest));
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking(
                 "state_estimateGas",
                 vec![serde_json::json!(request), serde_json::json!(block)],
@@ -553,6 +659,8 @@ impl EthApiServer for EthAdapter {
     fn gas_price(&self) -> RpcResult<U256> {
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("eth_gasPrice", vec![])
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
         let gas_price: U256 = serde_json::from_str(&response)
