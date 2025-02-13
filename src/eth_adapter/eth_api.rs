@@ -7,7 +7,7 @@ use jsonrpsee::{
     types::ErrorObject,
 };
 use serde::Deserialize;
-use std::{borrow::BorrowMut, collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use std::{cell::RefCell, str::FromStr};
 
 /// ETH RPC adapter
@@ -94,7 +94,7 @@ impl EthAdapter {
             H256::from_str(&substrate_block.header.parent_hash).unwrap_or(H256::zero());
         let author = H160::from_str(&substrate_block.header.author).unwrap_or(H160::zero());
         let timestamp = U256::from_str(&substrate_block.header.timestamp).unwrap_or(U256::zero());
-        let transactions = substrate_block
+        let transactions: Vec<Transaction> = substrate_block
             .extrinsics
             .into_iter()
             .map(Self::to_eth_transaction)
@@ -125,7 +125,7 @@ impl EthAdapter {
                 size: Some(U256::zero()),
                 base_fee_per_gas: None,
                 total_difficulty: Some(U256::zero()),
-                transactions,
+                transactions: BlockTransactions::Full(transactions),
                 uncles: Vec::new(),
             },
             extra_info: BTreeMap::new(),
@@ -188,7 +188,6 @@ impl EthAdapter {
             contract_address: None,
             logs,
             logs_bloom: Bloom::default(),
-            ..Default::default()
         }
     }
 
