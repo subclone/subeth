@@ -8,7 +8,7 @@ use jsonrpsee::{
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::{cell::RefCell, str::FromStr};
+use std::str::FromStr;
 
 /// ETH RPC adapter
 pub struct EthAdapter {
@@ -290,6 +290,8 @@ impl EthApiServer for EthAdapter {
     fn chain_id(&self) -> RpcResult<Option<U64>> {
         let response = self
             .client
+            .lock()
+            .await
             .request_blocking("eth_chainId", vec![])
             .map_err(|e| ErrorObject::owned(500, e.to_string(), None::<()>))?;
         let chain_id: U64 = serde_json::from_str(&response)
@@ -322,8 +324,11 @@ impl EthApiServer for EthAdapter {
         full: bool,
     ) -> RpcResult<Option<RichBlock>> {
         let block_number = match number_or_hash {
-            BlockNumberOrHash::Number(number) => number.to_string(),
-            BlockNumberOrHash::Hash(hash) => hash.to_string(),
+            BlockNumberOrHash::Num(number) => number.to_string(),
+            BlockNumberOrHash::Hash {
+                hash,
+                require_canonical: _,
+            } => hash.to_string(),
         };
 
         let response = self
