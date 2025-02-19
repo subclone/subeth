@@ -12,6 +12,7 @@ use crate::smoldot::SubLightClient;
 mod command;
 mod eth_adapter;
 mod smoldot;
+mod traits;
 mod types;
 
 #[tokio::main]

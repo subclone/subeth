@@ -16,8 +16,7 @@ std = [
 ]
 
 [dependencies]
-ethereum-types = { version = "0.14.1", default-features = false }
-jsonrpsee = { version = "0.22", features = ["async-client", "jsonrpsee-types"]}
+jsonrpsee = { version = "0.22", features = ["async-client", "jsonrpsee-types", "server", "jsonrpsee-proc-macros"]}
 log = { version = "0.4.14", default-features = false }
 parity-scale-codec = { version = "3.1.0", default-features = false }
 serde = { version = "1.0.136", default-features = false, features = ["derive"] }
@@ -26,8 +25,6 @@ smoldot-light = { git = "https://github.com/smol-dot/smoldot.git", rev = "23ce5b
 sp-core = { version = "32.0.0", default-features = false }
 tokio = { version = "1", features = ["rt", "macros", "time", "rt-multi-thread"] }
 
-# evm dependencies
-fc-rpc-core = { git = "https://github.com/polkadot-evm/frontier.git" }
-fc-rpc = { git = "https://github.com/polkadot-evm/frontier.git" }
-clap = { version = "4.5.21", features = ["derive", "env"] }
-futures = "0.3.31"
+# alloy dependencies
+alloy-rpc-types-eth = "0.11.1"
+subxt = { version = "0.39.0" }

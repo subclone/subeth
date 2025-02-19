@@ -1,80 +1,19 @@
 use super::*;
-use ethereum_types::{Bloom, H160, H256, H64, U256, U64};
-use fc_rpc_core::types::*;
-use futures::{lock::Mutex, StreamExt};
 use jsonrpsee::{
     core::{async_trait, RpcResult},
     types::ErrorObject,
 };
 use serde::Deserialize;
-use std::collections::BTreeMap;
-use std::str::FromStr;
+use std::{collections::BTreeMap, sync::Mutex};
+use subxt::PolkadotConfig;
 
 /// ETH RPC adapter
 pub struct EthAdapter {
     client: Mutex<SubLightClient>,
 }
 
-/// Substrate block structure
-#[derive(Deserialize)]
-struct SubstrateBlock {
-    header: SubstrateHeader,
-    hash: String,
-    extrinsics: Vec<SubstrateTransaction>,
-}
-
-/// Substrate header structure
-#[derive(Deserialize)]
-struct SubstrateHeader {
-    number: String,
-    parent_hash: String,
-    author: String,
-    timestamp: String,
-    state_root: String,
-}
-
-/// Substrate transaction structure
-#[derive(Deserialize)]
-struct SubstrateTransaction {
-    hash: String,
-    signature: SubstrateSignature,
-    call: SubstrateCall,
-}
-
-/// Substrate signature structure
-#[derive(Deserialize)]
-struct SubstrateSignature {
-    address: String,
-}
-
-/// Substrate call structure
-#[derive(Deserialize)]
-struct SubstrateCall {
-    to: String,
-    value: String,
-    gas: String,
-    gas_price: String,
-    input: Option<String>,
-}
-
-/// Substrate receipt structure
-#[derive(Deserialize)]
-struct SubstrateReceipt {
-    transaction_hash: String,
-    block_hash: String,
-    block_number: String,
-    gas_used: String,
-    status: String,
-    logs: Vec<SubstrateLog>,
-}
-
-/// Substrate log structure
-#[derive(Deserialize)]
-struct SubstrateLog {
-    address: String,
-    topics: Vec<String>,
-    data: Option<String>,
-}
+/// Substrate block
+type SubstrateBlock = subxt::blocks::Block<PolkadotConfig>;
 
 impl EthAdapter {
     /// Create a new instance of the ETH adapter
@@ -86,7 +25,7 @@ impl EthAdapter {
 
     /// Helper function to convert Substrate block to Ethereum block
     fn to_eth_block(substrate_block: SubstrateBlock) -> RichBlock {
-        let header = RichHeader::from(&substrate_block.header);
+        let header = RichHeader::from(&substrate_block.header());
 
         let block_number = U256::from_str(&substrate_block.header.number).unwrap_or(U256::zero());
         let block_hash = H256::from_str(&substrate_block.hash).unwrap_or(H256::zero());

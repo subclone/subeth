@@ -1,11 +1,7 @@
 //! ETH Rpc adapter
-use self::types::SubEthError;
 use super::SubLightClient;
-use crate::*;
 use eth_api::EthAdapter;
-use fc_rpc_core::EthApiServer;
 use jsonrpsee::server::Server;
-use sp_core::H256;
 
 mod eth_api;
 
