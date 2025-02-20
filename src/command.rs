@@ -1,6 +1,6 @@
 //! Command line interface for the Subeth RPC adapter.
 
-use crate::smoldot::SubLightClient;
+use crate::sub_client::SubLightClient;
 use clap::Parser;
 
 #[derive(clap::Parser)]

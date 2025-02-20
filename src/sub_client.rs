@@ -16,7 +16,7 @@ pub(crate) struct SubLightClient {
     /// Represents the client instance of the Substrate chain
     ///
     /// Requests are forwarded to this client
-    pub(crate) client: smoldot_light::Client<Arc<DefaultPlatform>>,
+    pub(crate) inner: subx
     /// Chain ID of the Substrate chain
     pub(crate) chain_id: ChainId,
     /// This is a stream of JSON-RPC responses, once the request is sent
@@ -53,7 +53,7 @@ impl SubLightClient {
         let json_rpc_responses = json_rpc_responses.ok_or("no json rpc responses").unwrap();
 
         Self {
-            client,
+            inner: client,
             chain_id,
             json_rpc_responses,
         }
@@ -73,7 +73,7 @@ impl SubLightClient {
             params.join(","),
         );
 
-        self.client.json_rpc_request(request_str, self.chain_id)?;
+        self.inner.json_rpc_request(request_str, self.chain_id)?;
 
         // wait for the response
         let response = self.json_rpc_responses.next().await.ok_or("no response")?;
@@ -93,11 +93,14 @@ impl SubLightClient {
             method,
         );
 
-        self.client
+        self.inner
             .json_rpc_request(request_str, self.chain_id)
             .unwrap();
 
         // self.client.with_subscriber(subscriber)
-        // wait for the response
+        todo!();
     }
+
+    /// Get current block number
+    async fn block_number(&mut self) -> Result<
 }

@@ -8,10 +8,10 @@
 //! Internally, it instantiates a `smoldot` light client instance to the respective Substrate chain and
 //! forwards the requests to the light client.
 
-use crate::smoldot::SubLightClient;
+use crate::sub_client::SubLightClient;
 mod command;
 mod eth_adapter;
-mod smoldot;
+mod sub_client;
 mod traits;
 mod types;
 

@@ -10675,6 +10675,7 @@ dependencies = [
  "smoldot-light 0.15.0",
  "sp-core 32.0.0",
  "subxt",
+ "subxt-lightclient",
  "tokio",
 ]
 
