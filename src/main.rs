@@ -9,6 +9,7 @@
 //! forwards the requests to the light client.
 
 use crate::sub_client::SubLightClient;
+mod adapter;
 mod command;
 mod eth_adapter;
 mod sub_client;

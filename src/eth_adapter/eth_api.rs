@@ -7,11 +7,6 @@ use serde::Deserialize;
 use std::{collections::BTreeMap, sync::Mutex};
 use subxt::PolkadotConfig;
 
-/// ETH RPC adapter
-pub struct EthAdapter {
-    client: Mutex<SubLightClient>,
-}
-
 /// Substrate block
 type SubstrateBlock = subxt::blocks::Block<PolkadotConfig>;
 
