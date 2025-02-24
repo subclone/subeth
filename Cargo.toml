@@ -10,7 +10,6 @@ default = ["std"]
 std = [
     "serde/std",
     "serde_json/std",
-    "sp-core/std",
     "parity-scale-codec/std",
 ]
 
@@ -20,7 +19,6 @@ log = { version = "0.4.14", default-features = false }
 parity-scale-codec = { version = "3.1.0", default-features = false }
 serde = { version = "1.0.136", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.79", default-features = false }
-sp-core = { version = "32.0.0", default-features = false }
 tokio = { version = "1", features = ["rt", "macros", "time", "rt-multi-thread"] }
 
 # alloy dependencies
@@ -29,5 +27,11 @@ subxt = { version = "0.39.0", features = ["unstable-light-client"] }
 alloy-consensus = "0.11.1"
 clap = { version = "4.5.30", features = ["derive"] }
 alloy-primitives = "0.8.21"
-sp-io = "39.0.0"
 frame-support = "39.0.0"
+anyhow = "1.0.96"
+ctrlc = "3.4.5"
+futures = "0.3.31"
+parking_lot = "0.12.3"
+sc-service = "0.49.0"
+sc-cli = "0.50.0"
+sp-core = "35.0.0"

@@ -49,6 +49,8 @@ pub enum SubEthError {
     SerdeError(&'static str),
     /// Conversion error
     ConversionError,
+    /// Not supported yet
+    Unsupported,
 }
 
 impl From<&'static str> for SubEthError {
@@ -93,6 +95,7 @@ impl From<SubEthError> for ErrorObject<'_> {
             SubEthError::ResponseFailed => ErrorObject::owned(500, "Response failed", None::<()>),
             SubEthError::SerdeError(msg) => ErrorObject::owned(500, msg, None::<()>),
             SubEthError::ConversionError => ErrorObject::owned(500, "Conversion error", None::<()>),
+            SubEthError::Unsupported => ErrorObject::owned(500, "Unsupported", None::<()>),
         }
     }
 }

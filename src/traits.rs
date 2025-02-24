@@ -1,7 +1,7 @@
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_rpc_types_eth::{
-    state::StateOverride, Block, BlockNumberOrTag, FeeHistory, Filter, FilterChanges, Index, Log,
-    Receipt, Transaction, TransactionRequest, Work,
+    pubsub, state::StateOverride, Block, BlockNumberOrTag, FeeHistory, Filter, FilterChanges,
+    Index, Log, Receipt, Transaction, TransactionRequest, Work,
 };
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use std::collections::BTreeMap;
@@ -257,4 +257,20 @@ pub trait EthFilterApi {
     /// Returns logs matching given filter object.
     #[method(name = "eth_getLogs")]
     async fn logs(&self, filter: Filter) -> RpcResult<Vec<Log>>;
+}
+
+/// Eth PUB-SUB rpc interface.
+#[rpc(server)]
+pub trait EthPubSubApi {
+    /// Create an eth subscription.
+    #[subscription(
+		name = "eth_subscribe" => "eth_subscription",
+		unsubscribe = "eth_unsubscribe",
+		item = pubsub::SubscriptionResult
+	)]
+    async fn subscribe(
+        &self,
+        kind: pubsub::SubscriptionKind,
+        params: Option<pubsub::Params>,
+    ) -> jsonrpsee::core::SubscriptionResult;
 }
