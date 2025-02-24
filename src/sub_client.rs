@@ -3,14 +3,18 @@
 //! Wrapped structure for Substrate light client that uses smoldot internally
 
 use crate::adapter::{hash_key, AddressMapping, PalletContractMapping, StorageKey};
+use crate::server::BlockNotification;
 use crate::types::*;
 use alloy_consensus::{Signed, TxEip1559};
 use alloy_primitives::{Address, ChainId, PrimitiveSignature, TxKind, B256, U256};
+use alloy_rpc_types_eth::pubsub::SubscriptionKind;
 use alloy_rpc_types_eth::{
     Block as EthBlock, BlockHashOrNumber, BlockNumberOrTag, Header as EthHeader, Index,
     Transaction, TransactionReceipt, TransactionRequest,
 };
 use frame_support::StorageHasher;
+use futures::{Stream, StreamExt};
+use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
 use subxt::backend::legacy::LegacyRpcMethods;
 use subxt::backend::rpc::RpcClient;
 use subxt::blocks::{Block, ExtrinsicDetails};
@@ -21,6 +25,7 @@ use subxt::{lightclient::LightClient, OnlineClient};
 type SubstrateBlock = Block<ChainConfig, OnlineClient<ChainConfig>>;
 type EthTransaction = Transaction;
 
+#[derive(Debug, Clone)]
 pub struct Properties {
     /// Decimals of the token
     decimals: u32,
@@ -29,9 +34,10 @@ pub struct Properties {
 }
 
 /// Represents the Substrate light client
+#[derive(Clone)]
 pub struct SubLightClient {
     /// Represents the client instance of the Substrate chain
-    inner: LightClient,
+    inner: Option<LightClient>,
     /// Represents a chains API
     api: OnlineClient<ChainConfig>,
     /// Represents a connection to RPC
@@ -43,14 +49,10 @@ pub struct SubLightClient {
 }
 
 impl SubLightClient {
-    pub(crate) async fn new(
-        chain_spec: &'static str,
-        chain_id: ChainId,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let (inner, rpc) = LightClient::relay_chain(chain_spec)?;
-
+    async fn new(rpc: impl Into<RpcClient>, chain_id: ChainId) -> anyhow::Result<Self> {
+        let rpc = rpc.into();
         let api = OnlineClient::<ChainConfig>::from_rpc_client(rpc.clone()).await?;
-        let rpc = LegacyRpcMethods::new(RpcClient::new(rpc));
+        let rpc = LegacyRpcMethods::new(rpc);
         let system_props = rpc.system_properties().await?;
 
         let properties = Properties {
@@ -66,12 +68,28 @@ impl SubLightClient {
         };
 
         Ok(Self {
-            inner,
+            inner: None,
             api,
             rpc,
             chain_id,
             properties,
         })
+    }
+
+    pub async fn from_light_client(chain_spec: &str, chain_id: ChainId) -> anyhow::Result<Self> {
+        let (inner, rpc) = LightClient::relay_chain(chain_spec)?;
+
+        let mut client = Self::new(rpc, chain_id).await?;
+
+        client.inner = Some(inner);
+
+        Ok(client)
+    }
+
+    pub async fn from_url(url: &str, chain_id: ChainId) -> anyhow::Result<Self> {
+        let rpc = RpcClient::from_url(url).await?;
+
+        Self::new(rpc, chain_id).await
     }
 }
 
@@ -302,7 +320,6 @@ impl SubLightClient {
 
                 final_key
             }
-            _ => return Err(SubEthError::ConversionError),
         };
 
         final_key.extend_from_slice(&storage_final_key);
@@ -317,6 +334,66 @@ impl SubLightClient {
 
         Ok(value)
     }
+
+    /// Subscribe new blocks
+    ///
+    /// the extracted block and ethereum transactions
+    async fn subscribe_new_blocks(
+        &self,
+        subscription_kind: SubscriptionKind,
+    ) -> Result<impl Stream<Item = Result<BlockNotification, SubEthError>>, SubEthError> {
+        let block_stream = match subscription_kind {
+            SubscriptionKind::NewHeads => self.api.blocks().subscribe_finalized().await,
+            _ => return Err(SubEthError::Unsupported),
+        }?;
+
+        Ok(block_stream.filter_map(|block| async {
+            match block {
+                Ok(block) => Some(Ok(BlockNotification {
+                    hash: block.hash().0.into(),
+                    is_new_best: false,
+                })),
+                Err(_) => Some(Err(SubEthError::ConversionError)),
+            }
+        }))
+    }
+}
+
+/// Handle accepted subscription
+///
+/// Pipes the block stream to the subscription sink
+pub async fn handle_accepted_subscription(
+    client: SubLightClient,
+    kind: SubscriptionKind,
+    sink: SubscriptionSink,
+) -> Result<(), SubEthError> {
+    let mut stream = Box::pin(client.subscribe_new_blocks(kind).await?);
+
+    loop {
+        tokio::select! {
+            _ = sink.closed() => {
+                break;
+            },
+            maybe_notification = stream.next() => {
+                let notif = if let Some(notification) = maybe_notification {
+                    if let Ok(notif) = notification {
+                        notif
+                    } else {
+                        break ();
+                    }
+                } else {
+                    break ();
+                };
+
+
+                if sink.send(SubscriptionMessage::from_json(&notif)?).await.is_err() {
+                    break ();
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Given a substrate block, convert it to an Ethereum block

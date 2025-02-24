@@ -2,12 +2,27 @@ use super::*;
 use alloy_consensus::Receipt;
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_rpc_types_eth::{
-    state::StateOverride, Block as EthBlock, BlockNumberOrTag, FeeHistory, Index, Transaction,
-    TransactionRequest, Work,
+    pubsub::{Params, SubscriptionKind, SubscriptionResult},
+    state::StateOverride,
+    Block as EthBlock, BlockNumberOrTag, FeeHistory, Index, Transaction, TransactionRequest, Work,
 };
-use jsonrpsee::core::{async_trait, RpcResult};
-use std::collections::BTreeMap;
-use traits::EthApiServer;
+use futures::{FutureExt, StreamExt};
+use jsonrpsee::{
+    core::{async_trait, RpcResult},
+    PendingSubscriptionSink, SubscriptionSink,
+};
+use std::{collections::BTreeMap, sync::Arc};
+use sub_client::handle_accepted_subscription;
+use traits::{EthApiServer, EthPubSubApiServer};
+
+pub type SubscriptionTaskExecutor = std::sync::Arc<dyn sp_core::traits::SpawnNamed>;
+
+/// A notification when new block is received.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct BlockNotification {
+    pub hash: B256,
+    pub is_new_best: bool,
+}
 
 /// The main ETH adapter struct responsible for handling all the ETH RPC methods and converting them to Substrate calls.
 pub struct EthAdapter {
@@ -15,12 +30,22 @@ pub struct EthAdapter {
     client: SubLightClient,
     /// Accounts managed by this ETH adapter
     accounts: Vec<Address>,
+    /// Subscription task executor
+    executor: SubscriptionTaskExecutor,
 }
 
 impl EthAdapter {
     /// Create a new instance of the ETH adapter
-    pub fn new(client: SubLightClient, accounts: Vec<Address>) -> Self {
-        Self { client, accounts }
+    pub fn new(
+        client: SubLightClient,
+        accounts: Vec<Address>,
+        executor: SubscriptionTaskExecutor,
+    ) -> Self {
+        Self {
+            client,
+            accounts,
+            executor,
+        }
     }
 }
 
@@ -303,5 +328,39 @@ impl EthApiServer for EthAdapter {
     /// Sends signed transaction, returning its hash.
     async fn send_raw_transaction(&self, _bytes: Bytes) -> RpcResult<B256> {
         unimplemented!("Transaction submission support is not implemented yet.")
+    }
+}
+
+#[async_trait]
+impl EthPubSubApiServer for EthAdapter {
+    async fn subscribe(
+        &self,
+        pending: PendingSubscriptionSink,
+        kind: SubscriptionKind,
+        params: Option<Params>,
+    ) -> jsonrpsee::core::SubscriptionResult {
+        // Handle the subscription logic here
+        println!(
+            "Subscribed with kind: {:?}, params: {:?}, id: {:?}",
+            kind, params, pending
+        );
+
+        let sink = pending.accept().await?;
+        let client = self.client.clone();
+
+        let fut = async move {
+            match kind {
+                SubscriptionKind::NewHeads => {
+                    let _ = handle_accepted_subscription(client, kind, sink).await;
+                }
+                _ => {}
+            }
+        }
+        .boxed();
+
+        self.executor
+            .spawn("sub-eth-subscription", Some("subeth"), fut);
+
+        Ok(())
     }
 }

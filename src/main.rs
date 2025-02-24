@@ -15,14 +15,11 @@ mod server;
 mod sub_client;
 mod traits;
 mod types;
+mod utils;
 
 #[tokio::main]
 async fn main() {
     println!("Subeth RPC adapter!");
-
-    let chain_spec = include_str!("../specs/polkadot.json");
-    let client = SubLightClient::new(chain_spec).await.unwrap();
-    let adapter = server::EthAdapter::new(client, vec![]);
 
     println!("Latest block: {:?}", 1);
 }
