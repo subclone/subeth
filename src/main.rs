@@ -11,7 +11,7 @@
 use crate::sub_client::SubLightClient;
 mod adapter;
 mod command;
-mod eth_adapter;
+mod server;
 mod sub_client;
 mod traits;
 mod types;
@@ -21,12 +21,8 @@ async fn main() {
     println!("Subeth RPC adapter!");
 
     let chain_spec = include_str!("../specs/polkadot.json");
-    let mut client = SubLightClient::new(chain_spec);
+    let client = SubLightClient::new(chain_spec).await.unwrap();
+    let adapter = server::EthAdapter::new(client, vec![]);
 
-    let latest_block = client
-        .request_blocking("rpc_methods", vec![])
-        .await
-        .unwrap();
-
-    println!("Latest block: {:?}", latest_block);
+    println!("Latest block: {:?}", 1);
 }

@@ -2,22 +2,40 @@
 
 use jsonrpsee::types::ErrorObject;
 use serde::{Deserialize, Serialize};
-use smoldot_light::HandleRpcError;
+use subxt::{
+    config::substrate::{BlakeTwo256, SubstrateHeader},
+    Config, PolkadotConfig,
+};
 
-/// Pallet to contract address mapping
-pub(crate) struct PalletContractMapping;
+/// Subxt mappings
+#[subxt::subxt(runtime_metadata_path = "./artifacts/polkadot_metadata_full.scale")]
 
-impl PalletContractMapping {
-    /// Get the contract address for a given pallet
-    pub fn get_contract_address(pallet: &str) -> Option<String> {
-        match pallet {
-            "Balances" => Some("0x1".repeat(20)),
-            "Contracts" => Some("0x2".repeat(20)),
-            "Sudo" => Some("0x3".repeat(20)),
-            "System" => Some("0x4".repeat(20)),
-            _ => None,
-        }
-    }
+mod src_chain {}
+pub use src_chain::*;
+
+/// Configuration of the chain
+pub enum ChainConfig {}
+impl Config for ChainConfig {
+    type Hash = subxt::utils::H256;
+    type AccountId = <PolkadotConfig as Config>::AccountId;
+    type Address = <PolkadotConfig as Config>::Address;
+    type Signature = <PolkadotConfig as Config>::Signature;
+    type Hasher = BlakeTwo256;
+    type Header = SubstrateHeader<u32, BlakeTwo256>;
+    type AssetId = <PolkadotConfig as Config>::AssetId;
+    type ExtrinsicParams = subxt::config::signed_extensions::AnyOf<
+        Self,
+        (
+            subxt::config::signed_extensions::CheckSpecVersion,
+            subxt::config::signed_extensions::CheckTxVersion,
+            subxt::config::signed_extensions::CheckNonce,
+            subxt::config::signed_extensions::CheckGenesis<Self>,
+            subxt::config::signed_extensions::CheckMortality<Self>,
+            subxt::config::signed_extensions::ChargeAssetTxPayment<Self>,
+            subxt::config::signed_extensions::ChargeTransactionPayment,
+            subxt::config::signed_extensions::CheckMetadataHash,
+        ),
+    >;
 }
 
 /// General error type for the Subeth library.
@@ -29,17 +47,8 @@ pub enum SubEthError {
     ResponseFailed,
     /// Serde related error
     SerdeError(&'static str),
-}
-
-impl From<HandleRpcError> for SubEthError {
-    fn from(e: HandleRpcError) -> Self {
-        match e {
-            HandleRpcError::TooManyPendingRequests { json_rpc_request } => {
-                log::error!("Too many pending requests: {:?}", json_rpc_request);
-                SubEthError::RequestFailed("Too many pending requests")
-            }
-        }
-    }
+    /// Conversion error
+    ConversionError,
 }
 
 impl From<&'static str> for SubEthError {
@@ -70,12 +79,12 @@ impl From<jsonrpsee::types::ErrorObjectOwned> for SubEthError {
     }
 }
 
-// impl From<jsonrpsee::types::ErrorObject> for SubEthError {
-//     fn from(e: jsonrpsee::types::ErrorObject) -> Self {
-//         log::error!("Error: {:?}", e);
-//         SubEthError::ResponseFailed
-//     }
-// }
+impl From<subxt::Error> for SubEthError {
+    fn from(e: subxt::Error) -> Self {
+        log::error!("Error: {:?}", e);
+        SubEthError::RequestFailed("Subxt error")
+    }
+}
 
 impl From<SubEthError> for ErrorObject<'_> {
     fn from(error: SubEthError) -> Self {
@@ -83,6 +92,13 @@ impl From<SubEthError> for ErrorObject<'_> {
             SubEthError::RequestFailed(msg) => ErrorObject::owned(500, msg, None::<()>),
             SubEthError::ResponseFailed => ErrorObject::owned(500, "Response failed", None::<()>),
             SubEthError::SerdeError(msg) => ErrorObject::owned(500, msg, None::<()>),
+            SubEthError::ConversionError => ErrorObject::owned(500, "Conversion error", None::<()>),
         }
+    }
+}
+
+impl From<()> for SubEthError {
+    fn from(_: ()) -> Self {
+        SubEthError::ConversionError
     }
 }
