@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use futures::FutureExt;
 use jsonrpsee::RpcModule;
 use sc_service::config::RpcConfiguration;
 
@@ -17,7 +18,7 @@ pub struct Opts {
     #[clap(short, long)]
     url: Option<String>,
     /// Chain ID
-    #[clap(short, long, default_value = "42")]
+    #[clap(long, default_value = "42")]
     chain_id: u64,
     /// Rpc params
     #[allow(missing_docs)]
@@ -68,6 +69,8 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
         .rpc_addr(false, false, 8545)?
         .map(|addrs| addrs.into_iter().map(Into::into).collect());
 
+    println!("Launching RPC server at: {:?}", addrs);
+
     let rpc_params = opts.rpc_params;
 
     let rpc_config = RpcConfiguration {
@@ -97,7 +100,8 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
     task_manager.keep_alive(eth_rpc_handle);
 
     // block until ctrl-c is received
-    crate::utils::block_until_sigint().await;
+    let signals = tokio_runtime.block_on(async { sc_cli::Signals::capture() })?;
+    tokio_runtime.block_on(signals.run_until_signal(task_manager.future().fuse()))?;
 
     Ok(())
 }

@@ -131,7 +131,9 @@ impl SubLightClient {
         if let Some(block) = substrate_block {
             convert_block(block, self.properties.decimals).await
         } else {
-            Err(SubEthError::ConversionError)
+            Err(SubEthError::AdapterError {
+                message: "Block not found".to_string(),
+            })
         }
     }
 
@@ -152,7 +154,9 @@ impl SubLightClient {
             .await?
             .fetch(&query)
             .await?
-            .ok_or(SubEthError::ConversionError)?;
+            .ok_or(SubEthError::AdapterError {
+                message: "Balance not found".to_string(),
+            })?;
 
         Ok(U256::from(balance.data.free))
     }
@@ -168,7 +172,9 @@ impl SubLightClient {
             .await?
             .fetch(&query)
             .await?
-            .ok_or(SubEthError::ConversionError)?
+            .ok_or(SubEthError::AdapterError {
+                message: "Couldn't fetch account from the storage".to_string(),
+            })?
             .nonce;
 
         Ok(U256::from(nonce))
@@ -179,7 +185,9 @@ impl SubLightClient {
     /// In our case, (for now) it returns `revert` bytecode if the given address is a pallet's contract address
     pub fn get_code(&self, address: Address) -> Result<Vec<u8>, SubEthError> {
         let pallet_name =
-            PalletContractMapping::pallet_name(address).ok_or(SubEthError::ConversionError)?;
+            PalletContractMapping::pallet_name(address).ok_or(SubEthError::AdapterError {
+                message: "Address is not a contract".to_string(),
+            })?;
         let code = format!("revert: {}", pallet_name);
         Ok(code.into_bytes())
     }
@@ -202,7 +210,9 @@ impl SubLightClient {
             .await?
             .fetch_raw(key.as_bytes())
             .await?
-            .ok_or(SubEthError::ConversionError)?;
+            .ok_or(SubEthError::AdapterError {
+                message: "Storage value not found".to_string(),
+            })?;
 
         Ok(storage_value)
     }
@@ -210,7 +220,7 @@ impl SubLightClient {
     /// Get transaction by hash
     ///
     /// Please, use `get_transaction_by_block_and_index` instead
-    pub async fn get_transaction_by_hash(
+    pub async fn _get_transaction_by_hash(
         &self,
         _tx_hash: B256,
     ) -> Result<Option<EthTransaction>, SubEthError> {
@@ -261,7 +271,7 @@ impl SubLightClient {
         }
     }
 
-    pub async fn get_transaction_receipt(
+    pub async fn _get_transaction_receipt(
         &self,
         _tx_hash: B256,
     ) -> Result<Option<TransactionReceipt>, SubEthError> {
@@ -270,27 +280,45 @@ impl SubLightClient {
 
     /// Read the storage of a pallet
     pub async fn call(&self, request: TransactionRequest) -> Result<Option<Vec<u8>>, SubEthError> {
-        let dest = request.to.ok_or(SubEthError::ConversionError)?;
+        let dest = request.to.ok_or(SubEthError::AdapterError {
+            message: "Destination not found".to_string(),
+        })?;
         let pallet_name = match dest {
             TxKind::Call(dest) => {
-                PalletContractMapping::pallet_name(dest).ok_or(SubEthError::ConversionError)?
+                PalletContractMapping::pallet_name(dest).ok_or(SubEthError::AdapterError {
+                    message: "Destination is not a contract".to_string(),
+                })?
             }
-            _ => return Err(SubEthError::ConversionError),
+            _ => {
+                return Err(SubEthError::AdapterError {
+                    message: "Unsupported transaction type".to_string(),
+                })
+            }
         };
-        let input = request.input.input.ok_or(SubEthError::ConversionError)?;
+        let input = request.input.input.ok_or(SubEthError::AdapterError {
+            message: "Call input not found".to_string(),
+        })?;
 
         let storage_key: StorageKey =
-            serde_json::from_slice(&input).map_err(|_| SubEthError::ConversionError)?;
+            serde_json::from_slice(&input).map_err(|_| SubEthError::AdapterError {
+                message: "Invalid call input".to_string(),
+            })?;
 
         let metadata = self.api.metadata();
         let pallet = metadata
             .pallet_by_name(&pallet_name)
-            .ok_or(SubEthError::ConversionError)?;
-        let storage = pallet.storage().ok_or(SubEthError::ConversionError)?;
+            .ok_or(SubEthError::AdapterError {
+                message: "Pallet not found".to_string(),
+            })?;
+        let storage = pallet.storage().ok_or(SubEthError::AdapterError {
+            message: "Pallet storage not found".to_string(),
+        })?;
 
         let entry = storage
             .entry_by_name(&storage_key.name)
-            .ok_or(SubEthError::ConversionError)?;
+            .ok_or(SubEthError::AdapterError {
+                message: "Storage entry not found".to_string(),
+            })?;
 
         let mut final_key = vec![];
 
@@ -309,10 +337,9 @@ impl SubLightClient {
             } => {
                 let mut final_key = vec![];
                 for (i, hasher) in hashers.iter().enumerate() {
-                    let key_raw = storage_key
-                        .keys
-                        .get(i)
-                        .ok_or(SubEthError::ConversionError)?;
+                    let key_raw = storage_key.keys.get(i).ok_or(SubEthError::AdapterError {
+                        message: "Number of storage keys does not match with hashers".to_string(),
+                    })?;
                     let key = hash_key(key_raw, hasher);
 
                     final_key.extend_from_slice(&key);
@@ -353,7 +380,9 @@ impl SubLightClient {
                     hash: block.hash().0.into(),
                     is_new_best: false,
                 })),
-                Err(_) => Some(Err(SubEthError::ConversionError)),
+                Err(_) => Some(Err(SubEthError::AdapterError {
+                    message: "Error in block stream".to_string(),
+                })),
             }
         }))
     }
@@ -479,7 +508,9 @@ async fn convert_extrinsic(
     let tx_index = ext.index();
     let from: [u8; 32] = ext
         .address_bytes()
-        .ok_or(SubEthError::ConversionError)?
+        .ok_or(SubEthError::AdapterError {
+            message: "Address not found".to_string(),
+        })?
         .try_into()
         .expect("should be safe to convert");
     let from = AddressMapping::to_address(AccountId32::from(from));
@@ -509,9 +540,9 @@ async fn convert_extrinsic(
                 _ => unreachable!("Unsupported account type; qed"),
             }
         } else {
-            let pallet_name = ext
-                .pallet_name()
-                .map_err(|_| SubEthError::ConversionError)?;
+            let pallet_name = ext.pallet_name().map_err(|_| SubEthError::AdapterError {
+                message: "Could not fetch pallet name from extrinsic".to_string(),
+            })?;
             (
                 PalletContractMapping::contract_address(pallet_name),
                 U256::ZERO,
@@ -523,7 +554,9 @@ async fn convert_extrinsic(
         .signed_extensions()
         .expect("should have signed extensions")
         .nonce()
-        .ok_or(SubEthError::ConversionError)?;
+        .ok_or(SubEthError::AdapterError {
+            message: "Nonce not found".to_string(),
+        })?;
     let input = ext.call_bytes().to_vec();
 
     let inner = alloy_consensus::TxEnvelope::Eip1559(Signed::new_unchecked(

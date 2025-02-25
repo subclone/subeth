@@ -8,18 +8,39 @@
 //! Internally, it instantiates a `smoldot` light client instance to the respective Substrate chain and
 //! forwards the requests to the light client.
 
-use crate::sub_client::SubLightClient;
 mod adapter;
 mod command;
 mod server;
 mod sub_client;
 mod traits;
 mod types;
-mod utils;
+
+use crate::sub_client::SubLightClient;
+use clap::Parser;
+use env_logger::{Builder, Env};
+use log::{debug, error, info, warn};
+
+fn init_logger() {
+    let env = Env::default()
+        .filter_or("RUST_LOG", "info")
+        .write_style_or("RUST_LOG_STYLE", "always");
+
+    Builder::from_env(env)
+        .format_timestamp(None)
+        .format_target(false)
+        .init();
+
+    info!("Logger initialized");
+}
 
 #[tokio::main]
 async fn main() {
     println!("Subeth RPC adapter!");
+    init_logger();
 
-    println!("Latest block: {:?}", 1);
+    let opts = command::Opts::parse();
+
+    if let Err(e) = command::run(opts).await {
+        eprintln!("Error: {:?}", e);
+    }
 }
