@@ -7,6 +7,10 @@ use jsonrpsee::RpcModule;
 use sc_service::config::RpcConfiguration;
 
 use crate::{sub_client::SubLightClient, traits::EthApiServer};
+use std::{
+    cell::RefCell,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 #[derive(clap::Parser, Debug)]
 #[clap(version = "0.1", author = "Subeth")]
@@ -26,6 +30,29 @@ pub struct Opts {
     rpc_params: sc_cli::RpcParams,
 }
 
+/// Blocks current thread until ctrl-c is received
+pub async fn block_until_sigint() {
+    let (ctrlc_send, ctrlc_oneshot) = futures::channel::oneshot::channel();
+    let ctrlc_send_c = RefCell::new(Some(ctrlc_send));
+
+    let running = Arc::new(AtomicUsize::new(0));
+    ctrlc::set_handler(move || {
+        let prev = running.fetch_add(1, Ordering::SeqCst);
+        if prev == 0 {
+            println!("Got interrupt, shutting down...");
+            // Send sig int in channel to blocking task
+            if let Some(ctrlc_send) = ctrlc_send_c.try_borrow_mut().unwrap().take() {
+                ctrlc_send.send(()).expect("Error sending ctrl-c message");
+            }
+        } else {
+            std::process::exit(0);
+        }
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    ctrlc_oneshot.await.unwrap();
+}
+
 fn tokio_runtime() -> Result<tokio::runtime::Runtime, tokio::io::Error> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -38,6 +65,7 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
     // figure out if we are relying on a smoldot node or RPC node
     let client = if let Some(chain_spec_path) = opts.chain_spec {
         // load the chain spec file
+        log::info!("Loading chain spec from: {}", chain_spec_path);
         let chain_spec = std::fs::read_to_string(&chain_spec_path)?;
 
         SubLightClient::from_light_client(&chain_spec, chain_id).await?
@@ -99,9 +127,11 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
 
     task_manager.keep_alive(eth_rpc_handle);
 
-    // block until ctrl-c is received
-    let signals = tokio_runtime.block_on(async { sc_cli::Signals::capture() })?;
-    tokio_runtime.block_on(signals.run_until_signal(task_manager.future().fuse()))?;
+    // // block until ctrl-c is received
+    // let signals = tokio_runtime.block_on(async { sc_cli::Signals::capture() })?;
+    // tokio_runtime.block_on(signals.run_until_signal(task_manager.future().fuse()))?;
+    block_until_sigint().await;
 
+    tokio_runtime.shutdown_timeout(std::time::Duration::from_secs(10));
     Ok(())
 }
