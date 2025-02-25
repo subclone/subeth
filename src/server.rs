@@ -2,16 +2,16 @@ use super::*;
 use alloy_consensus::Receipt;
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_rpc_types_eth::{
-    pubsub::{Params, SubscriptionKind, SubscriptionResult},
+    pubsub::{Params, SubscriptionKind},
     state::StateOverride,
     Block as EthBlock, BlockNumberOrTag, FeeHistory, Index, Transaction, TransactionRequest, Work,
 };
-use futures::{FutureExt, StreamExt};
+use futures::FutureExt;
 use jsonrpsee::{
     core::{async_trait, RpcResult},
-    PendingSubscriptionSink, SubscriptionSink,
+    PendingSubscriptionSink,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 use sub_client::handle_accepted_subscription;
 use traits::{EthApiServer, EthPubSubApiServer};
 
@@ -145,7 +145,7 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     /// Get transaction by its hash.
-    async fn transaction_by_hash(&self, hash: B256) -> RpcResult<Option<Transaction>> {
+    async fn transaction_by_hash(&self, _hash: B256) -> RpcResult<Option<Transaction>> {
         unimplemented!()
     }
 

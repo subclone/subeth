@@ -47,44 +47,46 @@ pub enum SubEthError {
     ResponseFailed,
     /// Serde related error
     SerdeError(&'static str),
-    /// Conversion error
-    ConversionError,
+    /// Errors related to adapter
+    AdapterError { message: String },
     /// Not supported yet
     Unsupported,
 }
 
 impl From<&'static str> for SubEthError {
     fn from(e: &'static str) -> Self {
-        log::error!("Error: {:?}", e);
+        log::error!("Generic error: {:?}", e);
         SubEthError::RequestFailed(e)
     }
 }
 
 impl From<serde::de::value::Error> for SubEthError {
     fn from(e: serde::de::value::Error) -> Self {
-        log::error!("Error: {:?}", e);
+        log::error!("Serde error: {:?}", e);
         SubEthError::SerdeError("Deserialization error")
     }
 }
 
 impl From<serde_json::Error> for SubEthError {
     fn from(e: serde_json::Error) -> Self {
-        log::error!("Error: {:?}", e);
+        log::error!("Serde json error: {:?}", e);
         SubEthError::SerdeError("JSON deserialization error")
     }
 }
 
 impl From<jsonrpsee::types::ErrorObjectOwned> for SubEthError {
     fn from(e: jsonrpsee::types::ErrorObjectOwned) -> Self {
-        log::error!("Error: {:?}", e);
+        log::error!("jsonrpsee error: {:?}", e);
         SubEthError::ResponseFailed
     }
 }
 
 impl From<subxt::Error> for SubEthError {
     fn from(e: subxt::Error) -> Self {
-        log::error!("Error: {:?}", e);
-        SubEthError::RequestFailed("Subxt error")
+        log::error!("subxt error: {:?}", e);
+        SubEthError::AdapterError {
+            message: format!("Subx err: {:?}", e),
+        }
     }
 }
 
@@ -94,7 +96,9 @@ impl From<SubEthError> for ErrorObject<'_> {
             SubEthError::RequestFailed(msg) => ErrorObject::owned(500, msg, None::<()>),
             SubEthError::ResponseFailed => ErrorObject::owned(500, "Response failed", None::<()>),
             SubEthError::SerdeError(msg) => ErrorObject::owned(500, msg, None::<()>),
-            SubEthError::ConversionError => ErrorObject::owned(500, "Conversion error", None::<()>),
+            SubEthError::AdapterError { message } => {
+                ErrorObject::owned(500, "Adapter error", Some(message))
+            }
             SubEthError::Unsupported => ErrorObject::owned(500, "Unsupported", None::<()>),
         }
     }
@@ -102,6 +106,8 @@ impl From<SubEthError> for ErrorObject<'_> {
 
 impl From<()> for SubEthError {
     fn from(_: ()) -> Self {
-        SubEthError::ConversionError
+        SubEthError::AdapterError {
+            message: "generic adapter error".to_string(),
+        }
     }
 }
