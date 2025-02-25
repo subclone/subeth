@@ -9,7 +9,7 @@ use alloy_consensus::{Signed, TxEip1559};
 use alloy_primitives::{Address, ChainId, PrimitiveSignature, TxKind, B256, U256};
 use alloy_rpc_types_eth::pubsub::SubscriptionKind;
 use alloy_rpc_types_eth::{
-    Block as EthBlock, BlockHashOrNumber, BlockNumberOrTag, Header as EthHeader, Index,
+    Block as EthBlock, BlockNumberOrTag, Header as EthHeader, Index, SyncInfo, SyncStatus,
     Transaction, TransactionReceipt, TransactionRequest,
 };
 use frame_support::StorageHasher;
@@ -53,18 +53,11 @@ impl SubLightClient {
         let rpc = rpc.into();
         let api = OnlineClient::<ChainConfig>::from_rpc_client(rpc.clone()).await?;
         let rpc = LegacyRpcMethods::new(rpc);
-        let system_props = rpc.system_properties().await?;
+        // let system_props = rpc.system_properties().await?;
 
         let properties = Properties {
-            decimals: system_props
-                .get("tokenDecimals")
-                .and_then(|v| v.as_u64())
-                .expect("tokenDecimals should be set") as u32,
-            symbol: system_props
-                .get("tokenSymbol")
-                .and_then(|v| v.as_str())
-                .expect("tokenSymbol should be set")
-                .to_string(),
+            decimals: 10,
+            symbol: "Dot".to_string(),
         };
 
         Ok(Self {
@@ -99,6 +92,11 @@ impl SubLightClient {
         self.chain_id
     }
 
+    pub fn syncing(&self) -> Result<SyncStatus, SubEthError> {
+        // let status = self.rpc.system_health().await?;
+        Ok(SyncStatus::None)
+    }
+
     /// Current block number
     pub async fn block_number(&self) -> Result<u64, SubEthError> {
         let latest_block = self.api.blocks().at_latest().await?;
@@ -109,7 +107,7 @@ impl SubLightClient {
     pub async fn get_block_by_number(
         &self,
         block_number: BlockNumberOrTag,
-    ) -> Result<EthBlock, SubEthError> {
+    ) -> Result<Option<EthBlock>, SubEthError> {
         let substrate_block = match block_number {
             BlockNumberOrTag::Latest => Some(self.api.blocks().at_latest().await?),
             BlockNumberOrTag::Number(n) => {
@@ -129,11 +127,11 @@ impl SubLightClient {
         };
 
         if let Some(block) = substrate_block {
-            convert_block(block, self.properties.decimals).await
+            convert_block(block, self.properties.decimals)
+                .await
+                .map(Some)
         } else {
-            Err(SubEthError::AdapterError {
-                message: "Block not found".to_string(),
-            })
+            Ok(None)
         }
     }
 
@@ -147,49 +145,38 @@ impl SubLightClient {
     pub async fn get_balance(&self, address: Address) -> Result<U256, SubEthError> {
         let account_id = AddressMapping::to_ss58(address);
         let query = storage().system().account(&account_id);
-        let balance = self
-            .api
-            .storage()
-            .at_latest()
-            .await?
-            .fetch(&query)
-            .await?
-            .ok_or(SubEthError::AdapterError {
-                message: "Balance not found".to_string(),
-            })?;
+        let account = self.api.storage().at_latest().await?.fetch(&query).await?;
 
-        Ok(U256::from(balance.data.free))
+        if let Some(account_info) = account {
+            Ok(U256::from(account_info.data.free))
+        } else {
+            Ok(U256::ZERO)
+        }
     }
 
     /// Get transaction count
     pub async fn get_transaction_count(&self, address: Address) -> Result<U256, SubEthError> {
         let account_id = AddressMapping::to_ss58(address);
         let query = storage().system().account(&account_id);
-        let nonce = self
-            .api
-            .storage()
-            .at_latest()
-            .await?
-            .fetch(&query)
-            .await?
-            .ok_or(SubEthError::AdapterError {
-                message: "Couldn't fetch account from the storage".to_string(),
-            })?
-            .nonce;
+        let account = self.api.storage().at_latest().await?.fetch(&query).await?;
 
-        Ok(U256::from(nonce))
+        if let Some(account_info) = account {
+            Ok(U256::from(account_info.nonce))
+        } else {
+            Ok(U256::ZERO)
+        }
     }
 
     /// Get code of a contract
     ///
     /// In our case, (for now) it returns `revert` bytecode if the given address is a pallet's contract address
     pub fn get_code(&self, address: Address) -> Result<Vec<u8>, SubEthError> {
-        let pallet_name =
-            PalletContractMapping::pallet_name(address).ok_or(SubEthError::AdapterError {
-                message: "Address is not a contract".to_string(),
-            })?;
-        let code = format!("revert: {}", pallet_name);
-        Ok(code.into_bytes())
+        if let Some(name) = PalletContractMapping::pallet_name(address) {
+            let code = format!("revert: {}", name);
+            return Ok(code.into_bytes());
+        }
+
+        Ok(vec![])
     }
 
     /// Get storage at a given address
@@ -210,9 +197,7 @@ impl SubLightClient {
             .await?
             .fetch_raw(key.as_bytes())
             .await?
-            .ok_or(SubEthError::AdapterError {
-                message: "Storage value not found".to_string(),
-            })?;
+            .unwrap_or_default();
 
         Ok(storage_value)
     }
@@ -229,25 +214,26 @@ impl SubLightClient {
 
     pub async fn get_transaction_by_block_and_index(
         &self,
-        block: BlockHashOrNumber,
+        block: BlockNumberOrTag,
         tx_index: Index,
     ) -> Result<Option<EthTransaction>, SubEthError> {
-        let block_hash = if let Some(hash) = block.as_hash() {
-            hash.0.into()
-        } else {
-            let block_hash = self
-                .rpc
-                .chain_get_block_hash(Some(
-                    subxt::backend::legacy::rpc_methods::NumberOrHex::Number(
-                        block.as_number().expect("should be a number"),
-                    ),
-                ))
-                .await?;
-            if let Some(hash) = block_hash {
-                hash
-            } else {
+        let number = match block {
+            BlockNumberOrTag::Latest => self.block_number().await?,
+            BlockNumberOrTag::Number(n) => n,
+            _ => {
                 return Ok(None);
             }
+        };
+
+        let block_hash = self
+            .rpc
+            .chain_get_block_hash(Some(
+                subxt::backend::legacy::rpc_methods::NumberOrHex::Number(number),
+            ))
+            .await?;
+        let block_hash = match block_hash {
+            Some(hash) => hash,
+            None => return Ok(None),
         };
 
         let block = self.api.blocks().at(block_hash).await?;
@@ -280,45 +266,36 @@ impl SubLightClient {
 
     /// Read the storage of a pallet
     pub async fn call(&self, request: TransactionRequest) -> Result<Option<Vec<u8>>, SubEthError> {
-        let dest = request.to.ok_or(SubEthError::AdapterError {
-            message: "Destination not found".to_string(),
-        })?;
-        let pallet_name = match dest {
-            TxKind::Call(dest) => {
-                PalletContractMapping::pallet_name(dest).ok_or(SubEthError::AdapterError {
-                    message: "Destination is not a contract".to_string(),
-                })?
-            }
-            _ => {
-                return Err(SubEthError::AdapterError {
-                    message: "Unsupported transaction type".to_string(),
-                })
-            }
+        let dest = match request.to {
+            Some(TxKind::Call(dest)) => dest,
+            _ => return Ok(None),
         };
-        let input = request.input.input.ok_or(SubEthError::AdapterError {
-            message: "Call input not found".to_string(),
-        })?;
 
-        let storage_key: StorageKey =
-            serde_json::from_slice(&input).map_err(|_| SubEthError::AdapterError {
-                message: "Invalid call input".to_string(),
-            })?;
+        let pallet_name = match PalletContractMapping::pallet_name(dest) {
+            Some(name) => name,
+            None => return Ok(None),
+        };
+
+        // Parse storage key from input
+        let storage_key: StorageKey = match request
+            .input
+            .input
+            .and_then(|input| serde_json::from_slice(&input).ok())
+        {
+            Some(key) => key,
+            None => return Ok(None),
+        };
 
         let metadata = self.api.metadata();
-        let pallet = metadata
+        // Get metadata and find storage entry using method chaining
+        let entry = match metadata
             .pallet_by_name(&pallet_name)
-            .ok_or(SubEthError::AdapterError {
-                message: "Pallet not found".to_string(),
-            })?;
-        let storage = pallet.storage().ok_or(SubEthError::AdapterError {
-            message: "Pallet storage not found".to_string(),
-        })?;
-
-        let entry = storage
-            .entry_by_name(&storage_key.name)
-            .ok_or(SubEthError::AdapterError {
-                message: "Storage entry not found".to_string(),
-            })?;
+            .and_then(|p| p.storage())
+            .and_then(|s| s.entry_by_name(&storage_key.name))
+        {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
 
         let mut final_key = vec![];
 
@@ -328,28 +305,13 @@ impl SubLightClient {
         final_key.extend_from_slice(&pallet_prefix_hashed);
         final_key.extend_from_slice(&storage_prefix_hashed);
 
-        let storage_final_key = match entry.entry_type() {
-            StorageEntryType::Plain(_) => vec![],
-            StorageEntryType::Map {
-                hashers,
-                key_ty: _,
-                value_ty: _,
-            } => {
-                let mut final_key = vec![];
-                for (i, hasher) in hashers.iter().enumerate() {
-                    let key_raw = storage_key.keys.get(i).ok_or(SubEthError::AdapterError {
-                        message: "Number of storage keys does not match with hashers".to_string(),
-                    })?;
-                    let key = hash_key(key_raw, hasher);
-
-                    final_key.extend_from_slice(&key);
+        if let StorageEntryType::Map { hashers, .. } = entry.entry_type() {
+            for (i, hasher) in hashers.iter().enumerate() {
+                if let Some(key_raw) = storage_key.keys.get(i) {
+                    final_key.extend(hash_key(key_raw, hasher));
                 }
-
-                final_key
             }
-        };
-
-        final_key.extend_from_slice(&storage_final_key);
+        }
 
         let value = self
             .api
@@ -506,13 +468,13 @@ async fn convert_extrinsic(
 ) -> Result<EthTransaction, SubEthError> {
     let tx_hash = ext.hash();
     let tx_index = ext.index();
-    let from: [u8; 32] = ext
-        .address_bytes()
-        .ok_or(SubEthError::AdapterError {
-            message: "Address not found".to_string(),
-        })?
-        .try_into()
-        .expect("should be safe to convert");
+    let from: [u8; 32] = match ext.address_bytes() {
+        Some(addr) => addr.try_into().expect("should be safe to convert"),
+        // Inherents and unsigned extrinsics have no signer, so we use null address
+        None => [0u8; 32],
+    };
+    // let is_unsigned = !ext.is_signed();
+
     let from = AddressMapping::to_address(AccountId32::from(from));
 
     let (dest, value) = {
@@ -550,13 +512,11 @@ async fn convert_extrinsic(
         }
     };
 
-    let nonce = ext
-        .signed_extensions()
-        .expect("should have signed extensions")
-        .nonce()
-        .ok_or(SubEthError::AdapterError {
-            message: "Nonce not found".to_string(),
-        })?;
+    let nonce = match ext.signed_extensions() {
+        Some(exts) => exts.nonce().unwrap_or_default(),
+        None => 0,
+    };
+
     let input = ext.call_bytes().to_vec();
 
     let inner = alloy_consensus::TxEnvelope::Eip1559(Signed::new_unchecked(

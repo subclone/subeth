@@ -1,17 +1,17 @@
 use super::*;
 use alloy_consensus::Receipt;
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, Bytes, B256, U256, U64};
 use alloy_rpc_types_eth::{
     pubsub::{Params, SubscriptionKind},
     state::StateOverride,
-    Block as EthBlock, BlockNumberOrTag, FeeHistory, Index, Transaction, TransactionRequest, Work,
+    Block as EthBlock, BlockId, BlockNumberOrTag, BlockOverrides, FeeHistory, Index, SyncStatus,
+    Transaction, TransactionRequest, Work,
 };
 use futures::FutureExt;
 use jsonrpsee::{
     core::{async_trait, RpcResult},
     PendingSubscriptionSink,
 };
-use std::collections::BTreeMap;
 use sub_client::handle_accepted_subscription;
 use traits::{EthApiServer, EthPubSubApiServer};
 
@@ -61,6 +61,12 @@ impl EthApiServer for EthAdapter {
         Ok(1)
     }
 
+    fn syncing(&self) -> RpcResult<SyncStatus> {
+        let status = self.client.syncing()?;
+
+        Ok(status)
+    }
+
     /// Returns block author.
     fn author(&self) -> RpcResult<Address> {
         unimplemented!()
@@ -80,8 +86,8 @@ impl EthApiServer for EthAdapter {
     /// Returns the chain ID used for transaction signing at the
     /// current best block. None is returned if not
     /// available.
-    fn chain_id(&self) -> RpcResult<Option<u64>> {
-        Ok(Some(self.client.chain_id()))
+    fn chain_id(&self) -> RpcResult<Option<U64>> {
+        Ok(Some(U64::from(self.client.chain_id())))
     }
 
     // ########################################################################
@@ -96,10 +102,14 @@ impl EthApiServer for EthAdapter {
     }
 
     /// Returns block with given number.
-    async fn block_by_number(&self, number: u64, _full: bool) -> RpcResult<Option<EthBlock>> {
-        let block = self.client.get_block_by_number(number.into()).await?;
+    async fn block_by_number(
+        &self,
+        number: BlockNumberOrTag,
+        _full: bool,
+    ) -> RpcResult<Option<EthBlock>> {
+        let block = self.client.get_block_by_number(number).await?;
 
-        Ok(Some(block))
+        Ok(block)
     }
 
     /// Returns the number of transactions in a block with given hash.
@@ -108,7 +118,10 @@ impl EthApiServer for EthAdapter {
     }
 
     /// Returns the number of transactions in a block with given block number.
-    async fn block_transaction_count_by_number(&self, _number: u64) -> RpcResult<Option<U256>> {
+    async fn block_transaction_count_by_number(
+        &self,
+        _number: BlockNumberOrTag,
+    ) -> RpcResult<Option<U256>> {
         unimplemented!()
     }
 
@@ -152,26 +165,21 @@ impl EthApiServer for EthAdapter {
     /// Returns transaction by given block number and index.
     async fn transaction_by_block_hash_and_index(
         &self,
-        hash: B256,
-        index: Index,
+        _hash: B256,
+        _index: Index,
     ) -> RpcResult<Option<Transaction>> {
-        let tx = self
-            .client
-            .get_transaction_by_block_and_index(hash.into(), index)
-            .await?;
-
-        Ok(tx)
+        unimplemented!()
     }
 
     /// Returns transaction by given block number and index.
     async fn transaction_by_block_number_and_index(
         &self,
-        number: u64,
+        number: BlockNumberOrTag,
         index: Index,
     ) -> RpcResult<Option<Transaction>> {
         let tx = self
             .client
-            .get_transaction_by_block_and_index(number.into(), index)
+            .get_transaction_by_block_and_index(number, index)
             .await?;
 
         Ok(tx)
@@ -187,11 +195,7 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     /// Returns balance of the given account.
-    async fn balance(
-        &self,
-        address: Address,
-        _number_or_tag: Option<BlockNumberOrTag>,
-    ) -> RpcResult<U256> {
+    async fn balance(&self, address: Address, _number_or_tag: Option<BlockId>) -> RpcResult<U256> {
         let balance = self.client.get_balance(address).await?;
 
         Ok(balance)
@@ -202,7 +206,7 @@ impl EthApiServer for EthAdapter {
         &self,
         address: Address,
         key: B256,
-        _number_or_tag: Option<BlockNumberOrTag>,
+        _number_or_tag: Option<BlockId>,
     ) -> RpcResult<Vec<u8>> {
         let storage = self.client.get_storage_at(address, key.0.into()).await?;
 
@@ -239,8 +243,9 @@ impl EthApiServer for EthAdapter {
     async fn call(
         &self,
         request: TransactionRequest,
-        _number_or_tag: Option<BlockNumberOrTag>,
-        _state_overrides: Option<BTreeMap<Address, StateOverride>>,
+        _block_number: Option<BlockId>,
+        _state_overrides: Option<StateOverride>,
+        _block_overrides: Option<Box<BlockOverrides>>,
     ) -> RpcResult<Bytes> {
         let res = self.client.call(request).await?;
 
@@ -255,7 +260,8 @@ impl EthApiServer for EthAdapter {
     async fn estimate_gas(
         &self,
         _request: TransactionRequest,
-        _number_or_tag: Option<BlockNumberOrTag>,
+        _block_number: Option<BlockId>,
+        _state_override: Option<StateOverride>,
     ) -> RpcResult<U256> {
         unimplemented!()
     }

@@ -1,10 +1,9 @@
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, Bytes, B256, U256, U64};
 use alloy_rpc_types_eth::{
-    pubsub, state::StateOverride, Block, BlockNumberOrTag, FeeHistory, Filter, FilterChanges,
-    Index, Log, Receipt, Transaction, TransactionRequest, Work,
+    pubsub, state::StateOverride, Block, BlockId, BlockNumberOrTag, BlockOverrides, FeeHistory,
+    Filter, FilterChanges, Index, Log, Receipt, SyncStatus, Transaction, TransactionRequest, Work,
 };
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
-use std::collections::BTreeMap;
 
 /// Eth RPC interface.
 ///
@@ -19,9 +18,9 @@ pub trait EthApi {
     #[method(name = "eth_protocolVersion")]
     fn protocol_version(&self) -> RpcResult<u64>;
 
-    /// Returns an object with data about the sync status or false. (wtf?)
-    // #[method(name = "eth_syncing")]
-    // async fn syncing(&self) -> RpcResult<SyncStatus>;
+    /// Returns an object with data about the sync status or false.
+    #[method(name = "eth_syncing")]
+    fn syncing(&self) -> RpcResult<SyncStatus>;
 
     /// Returns block author.
     #[method(name = "eth_coinbase")]
@@ -39,7 +38,7 @@ pub trait EthApi {
     /// current best block. None is returned if not
     /// available.
     #[method(name = "eth_chainId")]
-    fn chain_id(&self) -> RpcResult<Option<u64>>;
+    fn chain_id(&self) -> RpcResult<Option<U64>>;
 
     // ########################################################################
     // Block
@@ -51,7 +50,11 @@ pub trait EthApi {
 
     /// Returns block with given number.
     #[method(name = "eth_getBlockByNumber")]
-    async fn block_by_number(&self, number: u64, full: bool) -> RpcResult<Option<Block>>;
+    async fn block_by_number(
+        &self,
+        number: BlockNumberOrTag,
+        full: bool,
+    ) -> RpcResult<Option<Block>>;
 
     /// Returns the number of transactions in a block with given hash.
     #[method(name = "eth_getBlockTransactionCountByHash")]
@@ -59,7 +62,10 @@ pub trait EthApi {
 
     /// Returns the number of transactions in a block with given block number.
     #[method(name = "eth_getBlockTransactionCountByNumber")]
-    async fn block_transaction_count_by_number(&self, number: u64) -> RpcResult<Option<U256>>;
+    async fn block_transaction_count_by_number(
+        &self,
+        number: BlockNumberOrTag,
+    ) -> RpcResult<Option<U256>>;
 
     /// Returns the number of uncles in a block with given hash.
     #[method(name = "eth_getUncleCountByBlockHash")]
@@ -101,7 +107,7 @@ pub trait EthApi {
     #[method(name = "eth_getTransactionByBlockNumberAndIndex")]
     async fn transaction_by_block_number_and_index(
         &self,
-        number: u64,
+        number: BlockNumberOrTag,
         index: Index,
     ) -> RpcResult<Option<Transaction>>;
 
@@ -115,11 +121,7 @@ pub trait EthApi {
 
     /// Returns balance of the given account.
     #[method(name = "eth_getBalance")]
-    async fn balance(
-        &self,
-        address: Address,
-        number_or_tag: Option<BlockNumberOrTag>,
-    ) -> RpcResult<U256>;
+    async fn balance(&self, address: Address, number_or_tag: Option<BlockId>) -> RpcResult<U256>;
 
     /// Returns content of the storage at given address.
     #[method(name = "eth_getStorageAt")]
@@ -127,7 +129,7 @@ pub trait EthApi {
         &self,
         address: Address,
         index: B256,
-        number_or_tag: Option<BlockNumberOrTag>,
+        number_or_tag: Option<BlockId>,
     ) -> RpcResult<Vec<u8>>;
 
     /// Returns the number of transactions sent from given address at given time (block number).
@@ -155,8 +157,9 @@ pub trait EthApi {
     async fn call(
         &self,
         request: TransactionRequest,
-        number_or_tag: Option<BlockNumberOrTag>,
-        state_overrides: Option<BTreeMap<Address, StateOverride>>,
+        block_number: Option<BlockId>,
+        state_overrides: Option<StateOverride>,
+        block_overrides: Option<Box<BlockOverrides>>,
     ) -> RpcResult<Bytes>;
 
     /// Estimate gas needed for execution of given contract.
@@ -164,7 +167,8 @@ pub trait EthApi {
     async fn estimate_gas(
         &self,
         request: TransactionRequest,
-        number_or_tag: Option<BlockNumberOrTag>,
+        block_number: Option<BlockId>,
+        state_override: Option<StateOverride>,
     ) -> RpcResult<U256>;
 
     // ########################################################################
