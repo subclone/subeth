@@ -149,6 +149,6 @@ mod tests {
     #[should_panic]
     #[test]
     fn test_pallet_mapping_panics() {
-        PalletContractMapping::contract_address("Invalid").unwrap();
+        PalletContractMapping::contract_address("Invalid");
     }
 }

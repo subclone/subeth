@@ -15,6 +15,9 @@ mod sub_client;
 mod traits;
 mod types;
 
+#[cfg(test)]
+mod tests;
+
 use crate::sub_client::SubLightClient;
 use clap::Parser;
 use env_logger::{Builder, Env};
