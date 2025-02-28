@@ -24,6 +24,9 @@ pub struct Opts {
     /// Chain ID
     #[clap(long, default_value = "42")]
     chain_id: u64,
+    /// Maximum retries for light client initialization
+    #[clap(long, default_value = "3")]
+    max_retries: u32,
     /// Rpc params
     #[allow(missing_docs)]
     #[clap(flatten)]
@@ -61,6 +64,7 @@ fn tokio_runtime() -> Result<tokio::runtime::Runtime, tokio::io::Error> {
 
 pub async fn run(opts: Opts) -> anyhow::Result<()> {
     let chain_id = opts.chain_id;
+    let max_retries = opts.max_retries;
 
     // figure out if we are relying on a smoldot node or RPC node
     let client = if let Some(chain_spec_path) = opts.chain_spec {
@@ -68,14 +72,14 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
         log::info!("Loading chain spec from: {}", chain_spec_path);
         let chain_spec = std::fs::read_to_string(&chain_spec_path)?;
 
-        SubLightClient::from_light_client(&chain_spec, chain_id).await?
+        SubLightClient::from_light_client(&chain_spec, chain_id, max_retries).await?
     } else if let Some(url) = opts.url {
         // create a new RPC client
         SubLightClient::from_url(&url, chain_id).await?
     } else {
         // default to a Polkadot node
         let polkadot_spec = include_str!("../specs/polkadot.json");
-        SubLightClient::from_light_client(polkadot_spec, chain_id).await?
+        SubLightClient::from_light_client(polkadot_spec, chain_id, max_retries).await?
     };
 
     let tokio_runtime = tokio_runtime()?;
