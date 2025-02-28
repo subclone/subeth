@@ -2,6 +2,9 @@
 //!
 //! Wrapped structure for Substrate light client that uses smoldot internally
 
+use std::net::TcpStream;
+use std::time::Duration;
+
 use crate::adapter::{hash_key, AddressMapping, PalletContractMapping, StorageKey};
 use crate::server::BlockNotification;
 use crate::types::*;
@@ -9,8 +12,8 @@ use alloy_consensus::{Signed, TxEip1559};
 use alloy_primitives::{Address, ChainId, PrimitiveSignature, TxKind, B256, U256};
 use alloy_rpc_types_eth::pubsub::SubscriptionKind;
 use alloy_rpc_types_eth::{
-    Block as EthBlock, BlockNumberOrTag, Header as EthHeader, Index, SyncInfo, SyncStatus,
-    Transaction, TransactionReceipt, TransactionRequest,
+    Block as EthBlock, BlockNumberOrTag, Header as EthHeader, Index, SyncStatus, Transaction,
+    TransactionReceipt, TransactionRequest,
 };
 use frame_support::StorageHasher;
 use futures::{Stream, StreamExt};
@@ -68,15 +71,60 @@ impl SubLightClient {
             properties,
         })
     }
+    async fn is_port_open(port: u16) -> bool {
+        // Check if the RPC port is open and then disconnect
+        TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok()
+    }
 
-    pub async fn from_light_client(chain_spec: &str, chain_id: ChainId) -> anyhow::Result<Self> {
-        let (inner, rpc) = LightClient::relay_chain(chain_spec)?;
-
-        let mut client = Self::new(rpc, chain_id).await?;
-
-        client.inner = Some(inner);
-
-        Ok(client)
+    pub async fn from_light_client(
+        chain_spec: &str,
+        chain_id: ChainId,
+        max_retries: u32,
+    ) -> anyhow::Result<Self> {
+        for attempt in 1..=max_retries {
+            match LightClient::relay_chain(chain_spec) {
+                Ok((inner, rpc)) => {
+                    let mut client = Self::new(rpc, chain_id).await?;
+                    client.inner = Some(inner);
+                    // Wait and check if RPC port is open (default 8545)
+                    for _ in 0..12 {
+                        // Wait up to 60s (12 * 5s)
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        if Self::is_port_open(8545).await {
+                            log::info!(
+                                "Light client initialized successfully on attempt {}",
+                                attempt
+                            );
+                            return Ok(client);
+                        }
+                    }
+                    if attempt == max_retries {
+                        return Err(anyhow::anyhow!(
+                            "Light client failed to open RPC port 8545 after {} attempts",
+                            max_retries
+                        ));
+                    }
+                    log::warn!("Port 8545 not open on attempt {}, retrying...", attempt);
+                }
+                Err(e) => {
+                    if attempt == max_retries {
+                        return Err(anyhow::anyhow!(
+                            "Failed to initialize light client after {} attempts: {}",
+                            max_retries,
+                            e
+                        ));
+                    }
+                    log::warn!(
+                        "Light client spawn failed on attempt {}/{}: {}. Retrying...",
+                        attempt,
+                        max_retries,
+                        e
+                    );
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        }
+        unreachable!("Loop should return or error out");
     }
 
     pub async fn from_url(url: &str, chain_id: ChainId) -> anyhow::Result<Self> {
