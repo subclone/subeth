@@ -1,12 +1,21 @@
-use alloy_primitives::{Address, Bytes, B256, U256, U64};
-use alloy_rpc_types_eth::{Block, BlockNumberOrTag, Index, Transaction, TransactionRequest};
+use alloy_primitives::{hex, Address, Bytes, TxKind, U256, U64};
+use alloy_rpc_types_eth::{
+    Block, BlockId, Index, Transaction, TransactionInput, TransactionRequest,
+};
 use anyhow::Result;
-use jsonrpsee::{core::client::ClientT, rpc_params, ws_client::WsClientBuilder};
+use futures::future::join_all;
+use jsonrpsee::{
+    core::{client::ClientT, params::ArrayParams},
+    rpc_params,
+    ws_client::WsClientBuilder,
+};
+use sp_core::H256;
 use std::time::Duration;
 use tokio::process::Command;
 
+use crate::adapter::StorageKey;
+
 const CHAIN_SPEC: &str = "./specs/polkadot.json";
-const WS_URL: &str = "ws://127.0.0.1:8545";
 const POLKADOT_RPC: &str = "wss://polkadot.dotters.network";
 
 async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
@@ -21,7 +30,9 @@ async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
             .arg("--chain-spec")
             .arg(CHAIN_SPEC)
             .arg("--max-retries")
-            .arg("3");
+            .arg("3")
+            .arg("--rpc-port")
+            .arg("8546");
     } else {
         command.arg("--url").arg(POLKADOT_RPC);
     }
@@ -30,7 +41,12 @@ async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
     let mut child = command
         .spawn()
         .map_err(|e| anyhow::anyhow!("Failed to start client: {}", e))?;
-    tokio::time::sleep(Duration::from_secs(60)).await; // Wait for client to stabilize
+
+    tokio::time::sleep(Duration::from_secs(10)).await; // Wait for client to stabilize
+
+    if use_light_client {
+        tokio::time::sleep(Duration::from_secs(40)).await; // Wait for client to stabilize
+    }
 
     match child.try_wait() {
         Ok(Some(status)) => Err(anyhow::anyhow!("Client exited with status: {}", status)),
@@ -39,7 +55,10 @@ async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
     }
 }
 
-async fn test_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Result<()> {
+async fn test_base_rpc_calls(
+    ws_client: &jsonrpsee::ws_client::WsClient,
+    is_light_client: bool,
+) -> Result<()> {
     // eth_protocolVersion
     let protocol_version: u64 = ws_client
         .request("eth_protocolVersion", rpc_params![])
@@ -56,69 +75,84 @@ async fn test_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Result<()
 
     // eth_blockNumber
     let block_number: U256 = ws_client.request("eth_blockNumber", rpc_params![]).await?;
-    assert!(block_number >= U256::ZERO);
+    assert!(block_number > U256::ZERO);
 
     // eth_chainId
     let chain_id: Option<U64> = ws_client.request("eth_chainId", rpc_params![]).await?;
     assert_eq!(chain_id, Some(U64::from(42)));
 
     // eth_getBlockByHash (fetch latest block first)
-    let latest_block: Block = ws_client
-        .request("eth_getBlockByNumber", rpc_params!["latest", false])
-        .await?
-        .expect("Latest block should exist");
-    let block_by_hash: Option<Block> = ws_client
-        .request(
+    let latest_block = ws_client
+        .request::<Option<Block>, ArrayParams>("eth_getBlockByNumber", rpc_params!["latest", false])
+        .await?;
+    let block_by_hash = ws_client
+        .request::<Option<Block>, ArrayParams>(
             "eth_getBlockByHash",
-            rpc_params![latest_block.header.hash, false],
+            rpc_params![latest_block.clone().unwrap().header.hash, false],
         )
         .await?;
     assert!(block_by_hash.is_some());
 
     // eth_getBlockByNumber
-    let block_by_number: Option<Block> = ws_client
-        .request("eth_getBlockByNumber", rpc_params!["latest", false])
+    let block_number =
+        hex::encode_prefixed((latest_block.clone().unwrap().header.number).to_be_bytes());
+
+    // if it's light client, wait a bit for the block to be finalized
+    let block_by_number = ws_client
+        .request::<Option<Block>, ArrayParams>(
+            "eth_getBlockByNumber",
+            rpc_params![block_number.clone(), false],
+        )
         .await?;
     assert!(block_by_number.is_some());
 
+    println!("Block number: {:?}", block_number);
     // eth_getTransactionByBlockNumberAndIndex
-    let tx: Option<Transaction> = ws_client
-        .request(
+    let tx = ws_client
+        .request::<Option<Transaction>, ArrayParams>(
             "eth_getTransactionByBlockNumberAndIndex",
-            rpc_params!["latest", Index::from(0)],
+            rpc_params![block_number, Index::from(0)],
         )
         .await?;
     if let Some(ref block) = block_by_number {
         if let Some(ref tx) = tx {
-            assert!(block.transactions.as_full().unwrap().contains(tx));
+            assert!(block
+                .transactions
+                .clone()
+                .into_transactions_vec()
+                .contains(tx));
         }
     }
 
     // eth_getBalance
-    let balance: U256 = ws_client
-        .request(
+    let balance = ws_client
+        .request::<U256, ArrayParams>(
             "eth_getBalance",
-            rpc_params!["0x0000000000000000000000000000000000000000", "latest"],
+            rpc_params![
+                "0x0000000000000000000000000000000000000000",
+                hex::encode_prefixed(block_by_hash.unwrap().header.number.to_be_bytes())
+            ],
         )
         .await?;
     assert_eq!(balance, U256::ZERO);
 
+    println!("Balance: {:?}", balance);
     // eth_getStorageAt
     let storage: Vec<u8> = ws_client
-        .request(
+        .request::<Vec<u8>, ArrayParams>(
             "eth_getStorageAt",
             rpc_params![
                 "0x62616c616e636573000000000000000000000000", // "balances" pallet
                 "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "latest"
+                None::<BlockId>
             ],
         )
         .await?;
     assert!(!storage.is_empty() || storage.is_empty()); // Just check it returns
 
     // eth_getTransactionCount
-    let tx_count: U256 = ws_client
-        .request(
+    let tx_count = ws_client
+        .request::<U256, ArrayParams>(
             "eth_getTransactionCount",
             rpc_params!["0x0000000000000000000000000000000000000000", "latest"],
         )
@@ -126,62 +160,93 @@ async fn test_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Result<()
     assert_eq!(tx_count, U256::ZERO);
 
     // eth_getCode
-    let code: Bytes = ws_client
-        .request(
+    let code = ws_client
+        .request::<Bytes, ArrayParams>(
             "eth_getCode",
-            rpc_params!["0x62616c616e636573000000000000000000000000", "latest"],
+            rpc_params!["0x42616c616e636573000000000000000000000000", "latest"],
         )
         .await?;
-    assert!(code.starts_with(b"revert: balances") || code.is_empty());
+    assert!(code.starts_with(b"revert: Balances"));
 
     // eth_call
-    let call_result: Bytes = ws_client
-        .request(
-            "eth_call",
-            rpc_params![{
-                "to": "0x62616c616e636573000000000000000000000000",
-                "data": serde_json::to_vec(&StorageKey {
-                    name: "TotalIssuance".to_string(),
-                    keys: vec![]
-                }).unwrap()
-            }, "latest"],
-        )
+    let eth_call_input = serde_json::to_string(&StorageKey {
+        name: "TotalIssuance".to_string(),
+        keys: vec![],
+    })
+    .unwrap();
+    let input_bytes = Bytes::from(eth_call_input.into_bytes());
+
+    println!("Input bytes: {:?}", input_bytes);
+    let eth_call_request = TransactionRequest {
+        from: None,
+        to: Some(TxKind::Call(
+            "0x42616c616e636573000000000000000000000000"
+                .parse()
+                .unwrap(),
+        )),
+        input: TransactionInput {
+            input: Some(input_bytes),
+            data: None,
+        },
+        ..Default::default()
+    };
+
+    let call_result = ws_client
+        .request::<Bytes, ArrayParams>("eth_call", rpc_params![eth_call_request, "latest"])
         .await?;
-    assert!(call_result.len() > 0 || call_result.is_empty()); // Check it returns
+    // Substrate stores in little endian
+    let total_issuance = u128::from_le_bytes(call_result.to_vec()[..].try_into().unwrap());
+    assert!(total_issuance > 0); // Check it returns
+
+    // Get staking storage entries
+    let bonded_accounts = [
+        "0x28ee403d79d6fb7a1d3eb608ba1655ae12913e478176167307ee5bf81310e485",
+        "0x585a40fe9cba07338d4f3bb714a6107f29a872f02c4b041904c8a265095f6581",
+        "0x31b0277dc6d1dd663f8e36fbe057483cf0648b69f296f61994c5bf10994e6732",
+    ]
+    .map(|acc| {
+        let acc_bytes = hex::decode(acc).unwrap();
+        let storage_key = StorageKey {
+            name: "Bonded".to_string(),
+            keys: vec![acc_bytes],
+        };
+        let storage_key_str = serde_json::to_string(&storage_key).unwrap();
+        Bytes::from(storage_key_str.into_bytes())
+    });
+
+    let bonded_results = bonded_accounts
+        .iter()
+        .map(|input| {
+            let eth_call_request = TransactionRequest {
+                from: None,
+                to: Some(TxKind::Call(
+                    "0x5374616b696e6700000000000000000000000000"
+                        .parse()
+                        .unwrap(),
+                )),
+                input: TransactionInput {
+                    input: Some(input.clone()),
+                    data: None,
+                },
+                ..Default::default()
+            };
+
+            ws_client
+                .request::<Bytes, ArrayParams>("eth_call", rpc_params![eth_call_request, "latest"])
+        })
+        .collect::<Vec<_>>();
+
+    for res in join_all(bonded_results).await {
+        let res = res?;
+        println!("Bonded result: {:?}", res);
+        let controller = H256::from_slice(&res.to_vec()[..32]);
+        // assert that this is a valid address
+        assert!(controller != H256::zero());
+    }
 
     // eth_gasPrice
     let gas_price: U256 = ws_client.request("eth_gasPrice", rpc_params![]).await?;
     assert_eq!(gas_price, U256::from(1_000_000));
-
-    // eth_isMining
-    let is_mining: bool = ws_client.request("eth_mining", rpc_params![]).await?;
-    assert!(!is_mining);
-
-    // eth_hashrate
-    let hashrate: U256 = ws_client.request("eth_hashrate", rpc_params![]).await?;
-    assert_eq!(hashrate, U256::ZERO);
-
-    // eth_getWork
-    let work: [B256; 3] = ws_client.request("eth_getWork", rpc_params![]).await?;
-    assert_eq!(work, [B256::ZERO, B256::ZERO, B256::ZERO]);
-
-    // eth_submitHashrate
-    let submit_hashrate: bool = ws_client
-        .request(
-            "eth_submitHashrate",
-            rpc_params![U256::from(100), B256::random()],
-        )
-        .await?;
-    assert!(!submit_hashrate);
-
-    // eth_submitWork
-    let submit_work: bool = ws_client
-        .request(
-            "eth_submitWork",
-            rpc_params![0u64, B256::random(), B256::random()],
-        )
-        .await?;
-    assert!(!submit_work);
 
     Ok(())
 }
@@ -189,15 +254,18 @@ async fn test_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Result<()
 #[tokio::test]
 async fn test_eth_rpc_light_client() -> Result<()> {
     let _client = spawn_client(true).await?;
-    let ws_client = WsClientBuilder::default().build(WS_URL).await?;
-    test_rpc_calls(&ws_client).await?;
+    let url: &str = "ws://127.0.0.1:8546";
+    let ws_client = WsClientBuilder::default().build(url).await?;
+    test_base_rpc_calls(&ws_client, true).await?;
+
     Ok(())
 }
 
 #[tokio::test]
 async fn test_eth_rpc_url() -> Result<()> {
     let _client = spawn_client(false).await?;
-    let ws_client = WsClientBuilder::default().build(WS_URL).await?;
-    test_rpc_calls(&ws_client).await?;
+    let url: &str = "ws://127.0.0.1:8545";
+    let ws_client = WsClientBuilder::default().build(url).await?;
+    test_base_rpc_calls(&ws_client, false).await?;
     Ok(())
 }

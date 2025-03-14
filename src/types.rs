@@ -1,11 +1,17 @@
 //! Primitive types used in the library.
 
+use alloy_rpc_types_eth::Transaction;
 use jsonrpsee::types::ErrorObject;
 use serde::{Deserialize, Serialize};
+use subxt::blocks::Block;
+use subxt::OnlineClient;
 use subxt::{
     config::substrate::{BlakeTwo256, SubstrateHeader},
     Config, PolkadotConfig,
 };
+
+pub type SubstrateBlock = Block<ChainConfig, OnlineClient<ChainConfig>>;
+pub type EthTransaction = Transaction;
 
 /// Subxt mappings
 #[subxt::subxt(runtime_metadata_path = "./artifacts/polkadot_metadata_full.scale")]
@@ -85,7 +91,7 @@ impl From<subxt::Error> for SubEthError {
     fn from(e: subxt::Error) -> Self {
         log::error!("subxt error: {:?}", e);
         SubEthError::AdapterError {
-            message: format!("Subx err: {:?}", e),
+            message: format!("Subxt err: {:?}", e),
         }
     }
 }

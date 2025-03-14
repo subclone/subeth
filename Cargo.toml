@@ -23,7 +23,7 @@ tokio = { version = "1", features = ["rt", "macros", "time", "rt-multi-thread"] 
 
 # alloy dependencies
 alloy-rpc-types-eth = "0.11.1"
-subxt = { version = "0.39.0", features = ["unstable-light-client", "reconnecting-rpc-client"] }
+subxt = { version = "0.40.0", features = ["unstable-light-client", "reconnecting-rpc-client"] }
 alloy-consensus = "0.11.1"
 clap = { version = "4.5.30", features = ["derive"] }
 alloy-primitives = "0.8.21"

@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use futures::FutureExt;
 use jsonrpsee::RpcModule;
 use sc_service::config::RpcConfiguration;
 
@@ -64,7 +63,6 @@ fn tokio_runtime() -> Result<tokio::runtime::Runtime, tokio::io::Error> {
 
 pub async fn run(opts: Opts) -> anyhow::Result<()> {
     let chain_id = opts.chain_id;
-    let max_retries = opts.max_retries;
 
     // figure out if we are relying on a smoldot node or RPC node
     let client = if let Some(chain_spec_path) = opts.chain_spec {
@@ -72,15 +70,17 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
         log::info!("Loading chain spec from: {}", chain_spec_path);
         let chain_spec = std::fs::read_to_string(&chain_spec_path)?;
 
-        SubLightClient::from_light_client(&chain_spec, chain_id, max_retries).await?
+        SubLightClient::from_light_client(&chain_spec, chain_id, None).await?
     } else if let Some(url) = opts.url {
         // create a new RPC client
-        SubLightClient::from_url(&url, chain_id).await?
+        SubLightClient::from_url(&url, chain_id, None).await?
     } else {
         // default to a Polkadot node
         let polkadot_spec = include_str!("../specs/polkadot.json");
-        SubLightClient::from_light_client(polkadot_spec, chain_id, max_retries).await?
+        SubLightClient::from_light_client(polkadot_spec, chain_id, None).await?
     };
+
+    log::info!("Connected to chain: {}", client.chain_id());
 
     let tokio_runtime = tokio_runtime()?;
     let tokio_handle = tokio_runtime.handle();
@@ -96,12 +96,15 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
         .merge(rpc_module)
         .map_err(|e| anyhow::anyhow!(e))?;
 
+    let rpc_port = opts.rpc_params.rpc_port.unwrap_or(8545);
+    log::info!("RPC port: {}", rpc_port);
+
     let addrs: Option<Vec<sc_service::config::RpcEndpoint>> = opts
         .rpc_params
-        .rpc_addr(false, false, 8545)?
+        .rpc_addr(false, false, rpc_port)?
         .map(|addrs| addrs.into_iter().map(Into::into).collect());
 
-    println!("Launching RPC server at: {:?}", addrs);
+    log::info!("Launching RPC server at: {:?}", addrs);
 
     let rpc_params = opts.rpc_params;
 

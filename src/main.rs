@@ -1,30 +1,30 @@
 //! # Subeth RPC adapter
 //!
-//! this is an adapter for any Substrate based chain to convert it to an ETH-RPC interface.
+//! Exposes an ETH RPC interface from an underlying Substrate light client or RPC url. This allows
+//! allows using different Ethereum tools and libraries with Substrate chains, for reading the chain state,
+//! indexing, and making generic RPC calls.
 //!
-//! ## smoldot
-//!
-//! It exposes an RPC interface with most of the methods that are available in the Ethereum JSON-RPC interface.
-//! Internally, it instantiates a `smoldot` light client instance to the respective Substrate chain and
-//! forwards the requests to the light client.
+//! The adapter currently supports most of the read methods from the JSON-RPC spec, and can be extended
+//! to support more methods as needed.
 
 mod adapter;
+mod cache;
 mod command;
 mod server;
 mod sub_client;
-mod traits;
-mod types;
-
 #[cfg(test)]
 mod tests;
+mod traits;
+mod types;
 
 use crate::sub_client::SubLightClient;
 use clap::Parser;
 use env_logger::{Builder, Env};
-use log::{debug, error, info, warn};
+use log::info;
 
 fn init_logger() {
     let env = Env::default()
+        // .filter_or("RUST_LOG", "debug,smoldot=trace,subxt=debug")
         .filter_or("RUST_LOG", "info")
         .write_style_or("RUST_LOG_STYLE", "always");
 

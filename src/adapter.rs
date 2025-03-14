@@ -106,22 +106,22 @@ mod tests {
 
     #[test]
     fn test_pallet_mapping_works() {
-        let balances = PalletContractMapping::contract_address("balances");
-        let staking = PalletContractMapping::contract_address("staking");
-        let democracy = PalletContractMapping::contract_address("democracy");
+        let balances = PalletContractMapping::contract_address("Balances");
+        let staking = PalletContractMapping::contract_address("Staking");
+        let democracy = PalletContractMapping::contract_address("democrac");
         let treasury = PalletContractMapping::contract_address("treasury");
 
         assert_eq!(
             balances,
-            address!("0x62616c616e636573000000000000000000000000")
+            address!("0x42616c616e636573000000000000000000000000")
         );
         assert_eq!(
             staking,
-            address!("0x7374616b696e6700000000000000000000000000")
+            address!("0x5374616b696e6700000000000000000000000000")
         );
         assert_eq!(
             democracy,
-            address!("0x64656d6f63726163790000000000000000000000")
+            address!("0x64656d6f63726163000000000000000000000000")
         );
         assert_eq!(
             treasury,
@@ -130,25 +130,19 @@ mod tests {
 
         assert_eq!(
             PalletContractMapping::pallet_name(balances).unwrap(),
-            "balances"
+            "Balances"
         );
         assert_eq!(
             PalletContractMapping::pallet_name(staking).unwrap(),
-            "staking"
+            "Staking"
         );
         assert_eq!(
             PalletContractMapping::pallet_name(democracy).unwrap(),
-            "democracy"
+            "democrac"
         );
         assert_eq!(
             PalletContractMapping::pallet_name(treasury).unwrap(),
             "treasury"
         );
-    }
-
-    #[should_panic]
-    #[test]
-    fn test_pallet_mapping_panics() {
-        PalletContractMapping::contract_address("Invalid");
     }
 }

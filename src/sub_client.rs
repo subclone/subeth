@@ -2,31 +2,26 @@
 //!
 //! Wrapped structure for Substrate light client that uses smoldot internally
 
-use std::net::TcpStream;
-use std::time::Duration;
-
 use crate::adapter::{hash_key, AddressMapping, PalletContractMapping, StorageKey};
+use crate::cache::BlockCache;
 use crate::server::BlockNotification;
 use crate::types::*;
 use alloy_consensus::{Signed, TxEip1559};
 use alloy_primitives::{Address, ChainId, PrimitiveSignature, TxKind, B256, U256};
 use alloy_rpc_types_eth::pubsub::SubscriptionKind;
 use alloy_rpc_types_eth::{
-    Block as EthBlock, BlockNumberOrTag, Header as EthHeader, Index, SyncStatus, Transaction,
+    Block as EthBlock, BlockNumberOrTag, Header as EthHeader, Index, SyncStatus,
     TransactionReceipt, TransactionRequest,
 };
 use frame_support::StorageHasher;
 use futures::{Stream, StreamExt};
 use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
-use subxt::backend::legacy::LegacyRpcMethods;
 use subxt::backend::rpc::RpcClient;
-use subxt::blocks::{Block, ExtrinsicDetails};
+use subxt::blocks::ExtrinsicDetails;
 use subxt::metadata::types::StorageEntryType;
+use subxt::rpc_params;
 use subxt::utils::{AccountId32, MultiAddress, H256};
 use subxt::{lightclient::LightClient, OnlineClient};
-
-type SubstrateBlock = Block<ChainConfig, OnlineClient<ChainConfig>>;
-type EthTransaction = Transaction;
 
 #[derive(Debug, Clone)]
 pub struct Properties {
@@ -43,20 +38,24 @@ pub struct SubLightClient {
     inner: Option<LightClient>,
     /// Represents a chains API
     api: OnlineClient<ChainConfig>,
-    /// Represents a connection to RPC
-    rpc: LegacyRpcMethods<ChainConfig>,
+    /// Rpc client itself
+    rpc_client: RpcClient,
     /// Chain ID of the Substrate chain
     chain_id: ChainId,
     /// Properties of the chain
     properties: Properties,
+    /// Cache for the chain
+    cache: BlockCache,
 }
 
 impl SubLightClient {
-    async fn new(rpc: impl Into<RpcClient>, chain_id: ChainId) -> anyhow::Result<Self> {
+    async fn new(
+        rpc: impl Into<RpcClient>,
+        chain_id: ChainId,
+        cache_capacity: Option<usize>,
+    ) -> anyhow::Result<Self> {
         let rpc = rpc.into();
         let api = OnlineClient::<ChainConfig>::from_rpc_client(rpc.clone()).await?;
-        let rpc = LegacyRpcMethods::new(rpc);
-        // let system_props = rpc.system_properties().await?;
 
         let properties = Properties {
             decimals: 10,
@@ -66,71 +65,35 @@ impl SubLightClient {
         Ok(Self {
             inner: None,
             api,
-            rpc,
             chain_id,
             properties,
+            rpc_client: rpc.into(),
+            cache: BlockCache::new(cache_capacity),
         })
-    }
-    async fn is_port_open(port: u16) -> bool {
-        // Check if the RPC port is open and then disconnect
-        TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok()
     }
 
     pub async fn from_light_client(
         chain_spec: &str,
         chain_id: ChainId,
-        max_retries: u32,
+        cache_blocks: Option<usize>,
     ) -> anyhow::Result<Self> {
-        for attempt in 1..=max_retries {
-            match LightClient::relay_chain(chain_spec) {
-                Ok((inner, rpc)) => {
-                    let mut client = Self::new(rpc, chain_id).await?;
-                    client.inner = Some(inner);
-                    // Wait and check if RPC port is open (default 8545)
-                    for _ in 0..12 {
-                        // Wait up to 60s (12 * 5s)
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        if Self::is_port_open(8545).await {
-                            log::info!(
-                                "Light client initialized successfully on attempt {}",
-                                attempt
-                            );
-                            return Ok(client);
-                        }
-                    }
-                    if attempt == max_retries {
-                        return Err(anyhow::anyhow!(
-                            "Light client failed to open RPC port 8545 after {} attempts",
-                            max_retries
-                        ));
-                    }
-                    log::warn!("Port 8545 not open on attempt {}, retrying...", attempt);
-                }
-                Err(e) => {
-                    if attempt == max_retries {
-                        return Err(anyhow::anyhow!(
-                            "Failed to initialize light client after {} attempts: {}",
-                            max_retries,
-                            e
-                        ));
-                    }
-                    log::warn!(
-                        "Light client spawn failed on attempt {}/{}: {}. Retrying...",
-                        attempt,
-                        max_retries,
-                        e
-                    );
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                }
-            }
-        }
-        unreachable!("Loop should return or error out");
+        let (inner, rpc) = LightClient::relay_chain(chain_spec)?;
+
+        let mut client = Self::new(rpc, chain_id, cache_blocks).await?;
+
+        client.inner = Some(inner);
+
+        Ok(client)
     }
 
-    pub async fn from_url(url: &str, chain_id: ChainId) -> anyhow::Result<Self> {
+    pub async fn from_url(
+        url: &str,
+        chain_id: ChainId,
+        cache_blocks: Option<usize>,
+    ) -> anyhow::Result<Self> {
         let rpc = RpcClient::from_url(url).await?;
 
-        Self::new(rpc, chain_id).await
+        Self::new(rpc, chain_id, cache_blocks).await
     }
 }
 
@@ -157,15 +120,30 @@ impl SubLightClient {
         block_number: BlockNumberOrTag,
     ) -> Result<Option<EthBlock>, SubEthError> {
         let substrate_block = match block_number {
-            BlockNumberOrTag::Latest => Some(self.api.blocks().at_latest().await?),
+            BlockNumberOrTag::Latest => {
+                let current_block_number = self.block_number().await?;
+                if let Some(block) = self.cache.get_by_number(current_block_number) {
+                    return Ok(Some(block));
+                }
+
+                Some(self.api.blocks().at_latest().await?)
+            }
             BlockNumberOrTag::Number(n) => {
-                let block_hash = self
-                    .rpc
-                    .chain_get_block_hash(Some(
-                        subxt::backend::legacy::rpc_methods::NumberOrHex::Number(n),
-                    ))
-                    .await?;
+                let block_hash = if let Some(hash) = self.cache.get_hash_by_number(n) {
+                    Some(hash)
+                } else {
+                    self.rpc_client
+                        .request::<Option<H256>>("chain_getBlockHash", rpc_params![n])
+                        .await?
+                };
+
                 if let Some(hash) = block_hash {
+                    self.cache.insert_number_to_hash(n, hash);
+
+                    if let Some(block) = self.cache.get_by_hash(&hash) {
+                        return Ok(Some(block));
+                    }
+
                     Some(self.api.blocks().at(hash).await?)
                 } else {
                     None
@@ -175,9 +153,9 @@ impl SubLightClient {
         };
 
         if let Some(block) = substrate_block {
-            convert_block(block, self.properties.decimals)
-                .await
-                .map(Some)
+            let eth_block = convert_block(block, self.properties.decimals).await?;
+            self.cache.insert_block(eth_block.clone());
+            Ok(Some(eth_block))
         } else {
             Ok(None)
         }
@@ -185,17 +163,33 @@ impl SubLightClient {
 
     /// Get block by hash
     pub async fn get_block_by_hash(&self, block_hash: H256) -> Result<EthBlock, SubEthError> {
+        if let Some(block) = self.cache.get_by_hash(&block_hash) {
+            return Ok(block);
+        }
         let block = self.api.blocks().at(block_hash).await?;
-        convert_block(block, self.properties.decimals).await
+        let eth_block = convert_block(block, self.properties.decimals).await?;
+        self.cache.insert_block(eth_block.clone());
+        Ok(eth_block)
     }
 
     /// Get balance of an address
     pub async fn get_balance(&self, address: Address) -> Result<U256, SubEthError> {
         let account_id = AddressMapping::to_ss58(address);
+        log::info!("Getting balance for account: {:?}", account_id);
         let query = storage().system().account(&account_id);
-        let account = self.api.storage().at_latest().await?.fetch(&query).await?;
+        log::info!("Query: {:?}", query);
+        let current_block_hash = self.cache.get_hash_by_number(self.block_number().await?);
 
+        let account = if let Some(hash) = current_block_hash {
+            log::info!("Current block hash: {:?}", hash);
+            self.api.storage().at(hash).fetch(&query).await?
+        } else {
+            self.api.storage().at_latest().await?.fetch(&query).await?
+        };
+
+        log::info!("Account: {:?}", account);
         if let Some(account_info) = account {
+            log::info!("Account info: {:?}", account_info);
             Ok(U256::from(account_info.data.free))
         } else {
             Ok(U256::ZERO)
@@ -265,6 +259,11 @@ impl SubLightClient {
         block: BlockNumberOrTag,
         tx_index: Index,
     ) -> Result<Option<EthTransaction>, SubEthError> {
+        log::info!(
+            "Getting transaction by block and index {:?} {:?}",
+            block,
+            tx_index
+        );
         let number = match block {
             BlockNumberOrTag::Latest => self.block_number().await?,
             BlockNumberOrTag::Number(n) => n,
@@ -273,12 +272,26 @@ impl SubLightClient {
             }
         };
 
-        let block_hash = self
-            .rpc
-            .chain_get_block_hash(Some(
-                subxt::backend::legacy::rpc_methods::NumberOrHex::Number(number),
-            ))
-            .await?;
+        if let Some(eth_block) = self.cache.get_by_number(number) {
+            log::info!("Found block in cache");
+            if let Some(tx) = eth_block
+                .transactions
+                .txns()
+                .find(|tx| tx.transaction_index == Some(tx_index.0 as u64))
+            {
+                log::info!("Found transaction in cache");
+                return Ok(Some(tx.clone()));
+            }
+        }
+
+        let block_hash = if let Some(hash) = self.cache.get_hash_by_number(number) {
+            Some(hash)
+        } else {
+            self.rpc_client
+                .request::<Option<H256>>("chain_getBlockHash", rpc_params![number])
+                .await?
+        };
+
         let block_hash = match block_hash {
             Some(hash) => hash,
             None => return Ok(None),
@@ -517,7 +530,7 @@ async fn convert_extrinsic(
     let tx_hash = ext.hash();
     let tx_index = ext.index();
     let from: [u8; 32] = match ext.address_bytes() {
-        Some(addr) => addr.try_into().expect("should be safe to convert"),
+        Some(addr) => addr.try_into().unwrap_or_default(), // TODO: investigate why this fails sometimes
         // Inherents and unsigned extrinsics have no signer, so we use null address
         None => [0u8; 32],
     };
