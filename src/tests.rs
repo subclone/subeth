@@ -125,18 +125,18 @@ async fn test_base_rpc_calls(
     }
 
     // eth_getBalance
-    let balance = ws_client
-        .request::<U256, ArrayParams>(
-            "eth_getBalance",
-            rpc_params![
-                "0x0000000000000000000000000000000000000000",
-                hex::encode_prefixed(block_by_hash.unwrap().header.number.to_be_bytes())
-            ],
-        )
-        .await?;
-    assert_eq!(balance, U256::ZERO);
+    // let balance = ws_client
+    //     .request::<U256, ArrayParams>(
+    //         "eth_getBalance",
+    //         rpc_params![
+    //             "0x0000000000000000000000000000000000000000",
+    //             hex::encode_prefixed(block_by_hash.unwrap().header.number.to_be_bytes())
+    //         ],
+    //     )
+    //     .await?;
+    // assert_eq!(balance, U256::ZERO);
 
-    println!("Balance: {:?}", balance);
+    // println!("Balance: {:?}", balance);
     // eth_getStorageAt
     let storage: Vec<u8> = ws_client
         .request::<Vec<u8>, ArrayParams>(

@@ -19,9 +19,10 @@ use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
 use subxt::backend::rpc::RpcClient;
 use subxt::blocks::ExtrinsicDetails;
 use subxt::metadata::types::StorageEntryType;
-use subxt::rpc_params;
+use subxt::storage::StorageClient;
 use subxt::utils::{AccountId32, MultiAddress, H256};
 use subxt::{lightclient::LightClient, OnlineClient};
+use subxt::{rpc_params, PolkadotConfig};
 
 #[derive(Debug, Clone)]
 pub struct Properties {
@@ -242,6 +243,19 @@ impl SubLightClient {
             .unwrap_or_default();
 
         Ok(storage_value)
+    }
+
+    pub async fn get_storage_client(
+        &self,
+        at: BlockNumberOrTag,
+    ) -> Result<StorageClient<ChainConfig, OnlineClient<ChainConfig>>, SubEthError> {
+        if let Some(at) = at.as_number() {
+            if let Some(hash) = self.cache.get_hash_by_number(at) {
+                Ok(self.api.storage().at(hash))
+            } else {
+                self.api.storage().at_latest().await.map_err(Into::into)
+            }
+        }
     }
 
     /// Get transaction by hash
