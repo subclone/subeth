@@ -5,7 +5,7 @@ const { unlink } = require("fs/promises");
 const execFileAsync = promisify(execFile);
 
 async function startSubeth({ chainSpec, url, chainId = 42, port = 8545 } = {}) {
-  const os = process.platform;
+  const os = require("process").platform; // Node.js built-in, should work
   let binaryName;
 
   if (os === "darwin") {
@@ -19,7 +19,7 @@ async function startSubeth({ chainSpec, url, chainId = 42, port = 8545 } = {}) {
   const binaryPath = `./${binaryName}`;
   if (!existsSync(binaryPath)) {
     const response = await fetch(
-      `https://github.com/subclone/subeth/releases/latest/download/${binaryName}`
+      `https://github.com/yourusername/subeth/releases/latest/download/${binaryName}`
     );
     if (!response.ok) throw new Error("Failed to fetch binary");
     const binary = await response.arrayBuffer();
@@ -45,11 +45,12 @@ async function startSubeth({ chainSpec, url, chainId = 42, port = 8545 } = {}) {
   };
 }
 
+// Export for module use
 module.exports = { startSubeth };
 
-// Example usage
+// Run if executed directly
 if (require.main === module) {
-  startSubeth({ chainSpec: "spec.json" }).then((adapter) =>
-    console.log(`Running at ${adapter.url}`)
-  );
+  startSubeth({ chainSpec: "spec.json" })
+    .then((adapter) => console.log(`Running at ${adapter.url}`))
+    .catch((err) => console.error(err));
 }
