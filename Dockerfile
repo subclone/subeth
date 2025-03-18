@@ -1,5 +1,5 @@
 # Use the official Rust image as a base image
-FROM rust:latest as builder
+FROM rust:latest AS builder
 
 # Set the working directory
 WORKDIR /usr/src/subeth-rpc-adapter

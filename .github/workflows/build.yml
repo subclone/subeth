@@ -1,0 +1,62 @@
+name: Build and Release Subeth Binary
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Build Binary
+        run: cargo build --release
+
+      - name: Rename Binary (macOS)
+        if: matrix.os == 'macos-latest'
+        run: mv target/release/subeth target/release/subeth-macos
+
+      - name: Rename Binary (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: mv target/release/subeth target/release/subeth-ubuntu
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: subeth-${{ matrix.os }}
+          path: target/release/subeth-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ github.sha }}"
+          files: |
+            artifacts/subeth-macos-latest/subeth-macos
+            artifacts/subeth-ubuntu-latest/subeth-ubuntu
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
