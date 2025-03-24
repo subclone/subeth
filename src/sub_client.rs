@@ -19,10 +19,10 @@ use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
 use subxt::backend::rpc::RpcClient;
 use subxt::blocks::ExtrinsicDetails;
 use subxt::metadata::types::StorageEntryType;
+use subxt::rpc_params;
 use subxt::storage::StorageClient;
 use subxt::utils::{AccountId32, MultiAddress, H256};
 use subxt::{lightclient::LightClient, OnlineClient};
-use subxt::{rpc_params, PolkadotConfig};
 
 #[derive(Debug, Clone)]
 pub struct Properties {
