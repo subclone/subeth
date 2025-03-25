@@ -245,18 +245,18 @@ impl SubLightClient {
         Ok(storage_value)
     }
 
-    pub async fn get_storage_client(
-        &self,
-        at: BlockNumberOrTag,
-    ) -> Result<StorageClient<ChainConfig, OnlineClient<ChainConfig>>, SubEthError> {
-        if let Some(at) = at.as_number() {
-            if let Some(hash) = self.cache.get_hash_by_number(at) {
-                Ok(self.api.storage().at(hash))
-            } else {
-                self.api.storage().at_latest().await.map_err(Into::into)
-            }
-        }
-    }
+    // pub async fn get_storage_client(
+    //     &self,
+    //     at: BlockNumberOrTag,
+    // ) -> Result<StorageClient<ChainConfig, OnlineClient<ChainConfig>>, SubEthError> {
+    //     if let Some(at) = at.as_number() {
+    //         if let Some(hash) = self.cache.get_hash_by_number(at) {
+    //             Ok(self.api.storage().at(hash))
+    //         } else {
+    //             self.api.storage().at_latest().await.map_err(Into::into)
+    //         }
+    //     }
+    // }
 
     /// Get transaction by hash
     ///
