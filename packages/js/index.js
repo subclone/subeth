@@ -19,7 +19,7 @@ async function startSubeth({ chainSpec, url, chainId = 42, port = 8545 } = {}) {
   const binaryPath = `./${binaryName}`;
   if (!existsSync(binaryPath)) {
     const response = await fetch(
-      `https://github.com/yourusername/subeth/releases/latest/download/${binaryName}`
+      `https://github.com/subclone/subeth/releases/latest/download/${binaryName}`
     );
     if (!response.ok) throw new Error("Failed to fetch binary");
     const binary = await response.arrayBuffer();
@@ -34,6 +34,10 @@ async function startSubeth({ chainSpec, url, chainId = 42, port = 8545 } = {}) {
   args.push("--port", port.toString());
 
   const process = execFile(binaryPath, args, { stdio: "pipe" });
+
+  // Pipe process output to console
+  process.stdout.pipe(process.stdout);
+  process.stderr.pipe(process.stderr);
 
   return {
     url: `http://localhost:${port}`,
@@ -50,7 +54,18 @@ module.exports = { startSubeth };
 
 // Run if executed directly
 if (require.main === module) {
-  startSubeth({ chainSpec: "spec.json" })
-    .then((adapter) => console.log(`Running at ${adapter.url}`))
+  startSubeth({ chainSpec: "./specs/polkadot.json" })
+    .then((adapter) => {
+      adapter.process.on("error", (error) => {
+        console.error("Process error:", error);
+      });
+
+      // Handle child process exit
+      adapter.process.on("exit", (code) => {
+        console.log(`Process exited with code ${code}`);
+        process.exit(code);
+      });
+      console.log(`Running at ${adapter.url}`);
+    })
     .catch((err) => console.error(err));
 }
