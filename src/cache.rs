@@ -74,13 +74,11 @@ impl BlockCache {
 
             // Add to ordered list
             inner.order.push_back(hash.0.into());
-            log::info!("CACHE: inserted block: {:?}", block);
         }
     }
 
     /// Get a block by number
     pub fn get_by_number(&self, number: u64) -> Option<EthBlock> {
-        log::info!("CACHE: get_by_number: {}", number);
         if let Ok(inner) = self.inner.read() {
             inner
                 .number_to_hash
@@ -93,7 +91,6 @@ impl BlockCache {
 
     /// Get a block by hash
     pub fn get_by_hash(&self, hash: &H256) -> Option<EthBlock> {
-        log::info!("CACHE: get_by_hash: {}", hash);
         if let Ok(inner) = self.inner.read() {
             inner.hash_to_block.get(hash).cloned()
         } else {
@@ -103,20 +100,10 @@ impl BlockCache {
 
     /// Get the hash of the block with the given number
     pub fn get_hash_by_number(&self, number: u64) -> Option<H256> {
-        log::info!("CACHE: get_hash_by_number: {}", number);
         if let Ok(inner) = self.inner.read() {
             inner.number_to_hash.get(&number).cloned()
         } else {
             None
-        }
-    }
-
-    /// Clear the cache
-    pub fn clear(&self) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.order.clear();
-            inner.number_to_hash.clear();
-            inner.hash_to_block.clear();
         }
     }
 }

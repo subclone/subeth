@@ -35,8 +35,7 @@ The idea is to call the `eth_call` method with the following parameters:
   {
     "name": "String",
     "keys": [
-        "0x..",
-        "...",
+        [...]
     ]
   }
   ```
@@ -45,7 +44,39 @@ The idea is to call the `eth_call` method with the following parameters:
 For example, reading the `System` pallet's `Account` storage item using `cast`:
 
 ```sh
-cast rpc eth_call --to 0x73697374656d0000000000000000000000000000 --input '{"name":"Account","keys":["0x"+<AccountId32>]}' --rpc-url ws://localhost:8545
+cast rpc eth_call '{
+    "to": "0x53797374656d0000000000000000000000000000",
+    "data": "7b226e616d65223a224163636f756e74222c226b657973223a5b5b39342c38312c39372c31302c3134332c39312c39342c342c3139312c34372c34302c3135302c31302c3136312c35362c3232332c34332c3131372c34392c3230382c3231392c3233342c3134372c39392c35342c3233372c36342c3136322c342c3230312c34362c31385d5d7d",
+  }' --rpc-url ws://localhost:8545
+```
+
+where:
+- `to` is the converted pallet address for `System`
+- `data` is the encoded JSON string of the format:
+  - {
+    "name": String,
+    "keys": Vec<Bytes>
+    }
+  e.g, in the case above
+  {
+    "name":"Account",
+    "keys":[[94,81,97,10,143,91,94,4,191,47,40,150,10,161,56,223,43,117,49,208,219,234,147,99,54,237,64,162,4,201,46,18]]
+  }
+
+For storage value `Staking` and `ActiveEra`:
+
+
+```sh
+cast rpc eth_call '{
+    "to": "0x5374616b696e6700000000000000000000000000",
+    "data": "7b226e616d65223a22416374697665457261222c226b657973223a5b5d7d",
+  }' --rpc-url ws://localhost:8545
+```
+
+to get the `data`, simply conert the string to bytes
+
+```sh
+echo -n '{"name":"ActiveEra","keys":[]}' | xxd -p -c 1000
 ```
 
 In the future, we can support calling Runtime API calls using the same logic.

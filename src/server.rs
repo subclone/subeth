@@ -182,7 +182,6 @@ impl EthApiServer for EthAdapter {
             .get_transaction_by_block_and_index(number, index)
             .await?;
 
-        log::info!("Transaction by block number and index: {:?}", tx);
         Ok(tx)
     }
 

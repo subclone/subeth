@@ -20,7 +20,6 @@ use subxt::backend::rpc::RpcClient;
 use subxt::blocks::ExtrinsicDetails;
 use subxt::metadata::types::StorageEntryType;
 use subxt::rpc_params;
-use subxt::storage::StorageClient;
 use subxt::utils::{AccountId32, MultiAddress, H256};
 use subxt::{lightclient::LightClient, OnlineClient};
 
@@ -176,21 +175,16 @@ impl SubLightClient {
     /// Get balance of an address
     pub async fn get_balance(&self, address: Address) -> Result<U256, SubEthError> {
         let account_id = AddressMapping::to_ss58(address);
-        log::info!("Getting balance for account: {:?}", account_id);
         let query = storage().system().account(&account_id);
-        log::info!("Query: {:?}", query);
         let current_block_hash = self.cache.get_hash_by_number(self.block_number().await?);
 
         let account = if let Some(hash) = current_block_hash {
-            log::info!("Current block hash: {:?}", hash);
             self.api.storage().at(hash).fetch(&query).await?
         } else {
             self.api.storage().at_latest().await?.fetch(&query).await?
         };
 
-        log::info!("Account: {:?}", account);
         if let Some(account_info) = account {
-            log::info!("Account info: {:?}", account_info);
             Ok(U256::from(account_info.data.free))
         } else {
             Ok(U256::ZERO)
@@ -273,11 +267,6 @@ impl SubLightClient {
         block: BlockNumberOrTag,
         tx_index: Index,
     ) -> Result<Option<EthTransaction>, SubEthError> {
-        log::info!(
-            "Getting transaction by block and index {:?} {:?}",
-            block,
-            tx_index
-        );
         let number = match block {
             BlockNumberOrTag::Latest => self.block_number().await?,
             BlockNumberOrTag::Number(n) => n,
@@ -287,13 +276,11 @@ impl SubLightClient {
         };
 
         if let Some(eth_block) = self.cache.get_by_number(number) {
-            log::info!("Found block in cache");
             if let Some(tx) = eth_block
                 .transactions
                 .txns()
                 .find(|tx| tx.transaction_index == Some(tx_index.0 as u64))
             {
-                log::info!("Found transaction in cache");
                 return Ok(Some(tx.clone()));
             }
         }
@@ -351,6 +338,7 @@ impl SubLightClient {
             None => return Ok(None),
         };
 
+        log::info!("pallet_name: {:?}", pallet_name);
         // Parse storage key from input
         let storage_key: StorageKey = match request
             .input
@@ -360,6 +348,8 @@ impl SubLightClient {
             Some(key) => key,
             None => return Ok(None),
         };
+
+        log::info!("storage_key: {:?}", storage_key);
 
         let metadata = self.api.metadata();
         // Get metadata and find storage entry using method chaining

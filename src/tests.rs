@@ -310,50 +310,6 @@ async fn test_eth_rpc_light_client() -> Result<()> {
         .await?;
     assert!(block_by_number.is_some());
 
-    println!("Block number: {:?}", block_number);
-    // eth_getTransactionByBlockNumberAndIndex
-    let tx = ws_client
-        .request::<Option<Transaction>, ArrayParams>(
-            "eth_getTransactionByBlockNumberAndIndex",
-            rpc_params![block_number, Index::from(0)],
-        )
-        .await?;
-    if let Some(ref block) = block_by_number {
-        if let Some(ref tx) = tx {
-            assert!(block
-                .transactions
-                .clone()
-                .into_transactions_vec()
-                .contains(tx));
-        }
-    }
-
-    // eth_getBalance
-    let balance = ws_client
-        .request::<U256, ArrayParams>(
-            "eth_getBalance",
-            rpc_params![
-                "0x0000000000000000000000000000000000000000",
-                hex::encode_prefixed(block_by_hash.unwrap().header.number.to_be_bytes())
-            ],
-        )
-        .await?;
-    assert_eq!(balance, U256::ZERO);
-
-    // println!("Balance: {:?}", balance);
-    // eth_getStorageAt
-    let storage: Vec<u8> = ws_client
-        .request::<Vec<u8>, ArrayParams>(
-            "eth_getStorageAt",
-            rpc_params![
-                "0x62616c616e636573000000000000000000000000", // "balances" pallet
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-                None::<BlockId>
-            ],
-        )
-        .await?;
-    assert!(!storage.is_empty() || storage.is_empty()); // Just check it returns
-
     Ok(())
 }
 

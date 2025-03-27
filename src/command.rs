@@ -11,6 +11,8 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+const DEFAULT_URL: &str = "wss://rpc.ibp.network/polkadot";
+
 #[derive(clap::Parser, Debug)]
 #[clap(version = "0.1", author = "Subeth")]
 pub struct Opts {
@@ -76,8 +78,9 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
         SubLightClient::from_url(&url, chain_id, None).await?
     } else {
         // default to a Polkadot node
-        let polkadot_spec = include_str!("../specs/polkadot.json");
-        SubLightClient::from_light_client(polkadot_spec, chain_id, None).await?
+        // let polkadot_spec = include_str!("../specs/polkadot.json");
+        // SubLightClient::from_light_client(polkadot_spec, chain_id, None).await?
+        SubLightClient::from_url(DEFAULT_URL, chain_id, None).await?
     };
 
     log::info!("Connected to chain: {}", client.chain_id());

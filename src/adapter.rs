@@ -90,6 +90,35 @@ mod tests {
     use alloy_primitives::{address, hex};
 
     #[test]
+    fn test_storage_key_works() {
+        let key = StorageKey {
+            name: "Account".to_string(),
+            keys: vec![hex::decode(
+                "0x5e51610a8f5b5e04bf2f28960aa138df2b7531d0dbea936336ed40a204c92e12",
+            )
+            .unwrap()],
+        };
+
+        assert_eq!(
+            serde_json::to_string(&key).unwrap(),
+            r#"{"name":"Account","keys":[[94,81,97,10,143,91,94,4,191,47,40,150,10,161,56,223,43,117,49,208,219,234,147,99,54,237,64,162,4,201,46,18]]}"#
+        );
+
+        let raw = r#"{"name":"Account","keys":[[94,81,97,10,143,91,94,4,191,47,40,150,10,161,56,223,43,117,49,208,219,234,147,99,54,237,64,162,4,201,46,18]]}"#;
+        println!("raw: {}", hex::encode(raw.as_bytes()));
+
+        let key = StorageKey {
+            name: "ActiveEra".to_string(),
+            keys: vec![],
+        };
+
+        println!(
+            "raw: {}",
+            hex::encode(serde_json::to_string(&key).unwrap().as_bytes())
+        );
+    }
+
+    #[test]
     fn test_hash_and_truncate() {
         let address = Address::from([1u8; 20]);
         let expected_account_id =
@@ -107,10 +136,15 @@ mod tests {
     #[test]
     fn test_pallet_mapping_works() {
         let balances = PalletContractMapping::contract_address("Balances");
+        let system = PalletContractMapping::contract_address("System");
         let staking = PalletContractMapping::contract_address("Staking");
         let democracy = PalletContractMapping::contract_address("democrac");
         let treasury = PalletContractMapping::contract_address("treasury");
 
+        assert_eq!(
+            system,
+            address!("0x53797374656d0000000000000000000000000000")
+        );
         assert_eq!(
             balances,
             address!("0x42616c616e636573000000000000000000000000")
