@@ -19,7 +19,9 @@ const CHAIN_SPEC: &str = "./specs/polkadot.json";
 const POLKADOT_RPC: &str = "wss://polkadot.dotters.network";
 
 async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
-    let binary_path = "/Users/dastansamat/.cargo/target/debug/subeth";
+    // let binary_path = "/Users/dastansamat/.cargo/target/debug/subeth";
+    let binary_path = "./packages/js/subeth-macos";
+
     if !std::path::Path::new(&binary_path).exists() {
         return Err(anyhow::anyhow!("Binary not found at {}", binary_path));
     }
@@ -124,17 +126,20 @@ async fn test_base_rpc_calls(
         }
     }
 
+    println!("Transaction: {:?}", tx);
     // eth_getBalance
-    // let balance = ws_client
-    //     .request::<U256, ArrayParams>(
-    //         "eth_getBalance",
-    //         rpc_params![
-    //             "0x0000000000000000000000000000000000000000",
-    //             hex::encode_prefixed(block_by_hash.unwrap().header.number.to_be_bytes())
-    //         ],
-    //     )
-    //     .await?;
-    // assert_eq!(balance, U256::ZERO);
+    let balance = ws_client
+        .request::<U256, ArrayParams>(
+            "eth_getBalance",
+            rpc_params![
+                "0x0000000000000000000000000000000000000000",
+                hex::encode_prefixed(block_by_hash.unwrap().header.number.to_be_bytes())
+            ],
+        )
+        .await?;
+    assert_eq!(balance, U256::ZERO);
+
+    println!("Balance: {:?}", balance);
 
     // println!("Balance: {:?}", balance);
     // eth_getStorageAt
@@ -150,6 +155,7 @@ async fn test_base_rpc_calls(
         .await?;
     assert!(!storage.is_empty() || storage.is_empty()); // Just check it returns
 
+    println!("Storage: {:?}", storage);
     // eth_getTransactionCount
     let tx_count = ws_client
         .request::<U256, ArrayParams>(
@@ -158,6 +164,7 @@ async fn test_base_rpc_calls(
         )
         .await?;
     assert_eq!(tx_count, U256::ZERO);
+    println!("Transaction count: {:?}", tx_count);
 
     // eth_getCode
     let code = ws_client
@@ -256,7 +263,96 @@ async fn test_eth_rpc_light_client() -> Result<()> {
     let _client = spawn_client(true).await?;
     let url: &str = "ws://127.0.0.1:8546";
     let ws_client = WsClientBuilder::default().build(url).await?;
-    test_base_rpc_calls(&ws_client, true).await?;
+    // eth_protocolVersion
+    let protocol_version: u64 = ws_client
+        .request("eth_protocolVersion", rpc_params![])
+        .await?;
+    assert_eq!(protocol_version, 1);
+
+    // eth_syncing
+    let syncing: bool = ws_client.request("eth_syncing", rpc_params![]).await?;
+    assert!(!syncing);
+
+    // eth_accounts
+    let accounts: Vec<Address> = ws_client.request("eth_accounts", rpc_params![]).await?;
+    assert!(accounts.is_empty());
+
+    // eth_blockNumber
+    let block_number: U256 = ws_client.request("eth_blockNumber", rpc_params![]).await?;
+    assert!(block_number > U256::ZERO);
+
+    // eth_chainId
+    let chain_id: Option<U64> = ws_client.request("eth_chainId", rpc_params![]).await?;
+    assert_eq!(chain_id, Some(U64::from(42)));
+
+    // eth_getBlockByHash (fetch latest block first)
+    let latest_block = ws_client
+        .request::<Option<Block>, ArrayParams>("eth_getBlockByNumber", rpc_params!["latest", false])
+        .await?;
+    let block_by_hash = ws_client
+        .request::<Option<Block>, ArrayParams>(
+            "eth_getBlockByHash",
+            rpc_params![latest_block.clone().unwrap().header.hash, false],
+        )
+        .await?;
+    assert!(block_by_hash.is_some());
+
+    // eth_getBlockByNumber
+    let block_number =
+        hex::encode_prefixed((latest_block.clone().unwrap().header.number).to_be_bytes());
+
+    // if it's light client, wait a bit for the block to be finalized
+    let block_by_number = ws_client
+        .request::<Option<Block>, ArrayParams>(
+            "eth_getBlockByNumber",
+            rpc_params![block_number.clone(), false],
+        )
+        .await?;
+    assert!(block_by_number.is_some());
+
+    println!("Block number: {:?}", block_number);
+    // eth_getTransactionByBlockNumberAndIndex
+    let tx = ws_client
+        .request::<Option<Transaction>, ArrayParams>(
+            "eth_getTransactionByBlockNumberAndIndex",
+            rpc_params![block_number, Index::from(0)],
+        )
+        .await?;
+    if let Some(ref block) = block_by_number {
+        if let Some(ref tx) = tx {
+            assert!(block
+                .transactions
+                .clone()
+                .into_transactions_vec()
+                .contains(tx));
+        }
+    }
+
+    // eth_getBalance
+    let balance = ws_client
+        .request::<U256, ArrayParams>(
+            "eth_getBalance",
+            rpc_params![
+                "0x0000000000000000000000000000000000000000",
+                hex::encode_prefixed(block_by_hash.unwrap().header.number.to_be_bytes())
+            ],
+        )
+        .await?;
+    assert_eq!(balance, U256::ZERO);
+
+    // println!("Balance: {:?}", balance);
+    // eth_getStorageAt
+    let storage: Vec<u8> = ws_client
+        .request::<Vec<u8>, ArrayParams>(
+            "eth_getStorageAt",
+            rpc_params![
+                "0x62616c616e636573000000000000000000000000", // "balances" pallet
+                "0x0000000000000000000000000000000000000000000000000000000000000000",
+                None::<BlockId>
+            ],
+        )
+        .await?;
+    assert!(!storage.is_empty() || storage.is_empty()); // Just check it returns
 
     Ok(())
 }

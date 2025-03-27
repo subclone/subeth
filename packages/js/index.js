@@ -2,10 +2,10 @@ const { existsSync } = require("fs");
 const { promisify } = require("util");
 const { execFile } = require("child_process");
 const { unlink } = require("fs/promises");
-const execFileAsync = promisify(execFile);
+const { spawn } = require("node:child_process");
 
 async function startSubeth({ chainSpec, url, chainId = 42, port = 8545 } = {}) {
-  const os = require("process").platform; // Node.js built-in, should work
+  const os = require("process").platform;
   let binaryName;
 
   if (os === "darwin") {
@@ -31,13 +31,9 @@ async function startSubeth({ chainSpec, url, chainId = 42, port = 8545 } = {}) {
   if (chainSpec) args.push("--chain-spec", chainSpec);
   if (url) args.push("--url", url);
   args.push("--chain-id", chainId.toString());
-  args.push("--port", port.toString());
+  // args.push("--port", port.toString());
 
-  const process = execFile(binaryPath, args, { stdio: "pipe" });
-
-  // Pipe process output to console
-  process.stdout.pipe(process.stdout);
-  process.stderr.pipe(process.stderr);
+  const process = spawn(binaryPath, args, { stdio: "pipe" });
 
   return {
     url: `http://localhost:${port}`,
@@ -49,18 +45,14 @@ async function startSubeth({ chainSpec, url, chainId = 42, port = 8545 } = {}) {
   };
 }
 
-// Export for module use
 module.exports = { startSubeth };
 
-// Run if executed directly
 if (require.main === module) {
-  startSubeth({ chainSpec: "./specs/polkadot.json" })
+  startSubeth()
     .then((adapter) => {
       adapter.process.on("error", (error) => {
         console.error("Process error:", error);
       });
-
-      // Handle child process exit
       adapter.process.on("exit", (code) => {
         console.log(`Process exited with code ${code}`);
         process.exit(code);

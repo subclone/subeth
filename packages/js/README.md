@@ -7,4 +7,3 @@ This package contains the Substrate Ethereum compatibility layer for JavaScript.
 ```bash
 node index.js
 ```
-
