@@ -4,13 +4,13 @@ Commands to test ETH RPC exposed from `subeth` adapter.
 
 ### Run subeth adapter
 
-This runs an adapter with `polkadot` light client.
+This runs an adapter on `polkadot`:
 
 ```sh 
 cargo run
 ```
 
-This runs an adapter with `polkadot` RPC node.
+This runs an adapter with custom `polkadot` RPC node.
 
 ```sh
 cargo run -- --url wss://polkadot.dotters.network
