@@ -338,7 +338,6 @@ impl SubLightClient {
             None => return Ok(None),
         };
 
-        log::info!("pallet_name: {:?}", pallet_name);
         // Parse storage key from input
         let storage_key: StorageKey = match request
             .input
@@ -348,8 +347,6 @@ impl SubLightClient {
             Some(key) => key,
             None => return Ok(None),
         };
-
-        log::info!("storage_key: {:?}", storage_key);
 
         let metadata = self.api.metadata();
         // Get metadata and find storage entry using method chaining

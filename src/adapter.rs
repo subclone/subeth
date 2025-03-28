@@ -105,16 +105,15 @@ mod tests {
         );
 
         let raw = r#"{"name":"Account","keys":[[94,81,97,10,143,91,94,4,191,47,40,150,10,161,56,223,43,117,49,208,219,234,147,99,54,237,64,162,4,201,46,18]]}"#;
-        println!("raw: {}", hex::encode(raw.as_bytes()));
 
         let key = StorageKey {
             name: "ActiveEra".to_string(),
             keys: vec![],
         };
 
-        println!(
-            "raw: {}",
-            hex::encode(serde_json::to_string(&key).unwrap().as_bytes())
+        assert_eq!(
+            serde_json::to_string(&key).unwrap(),
+            r#"{"name":"ActiveEra","keys":[]}"#
         );
     }
 

@@ -39,3 +39,20 @@ docker build -t subeth-rpc-adapter .
 docker run -p 8545:8545 subeth-rpc-adapter
 ```
 
+### Run unit and integration tests
+
+First we need to build the adapter:
+
+```sh
+cargo build
+```
+
+Then we can run the tests:
+
+```sh
+cargo test
+```
+
+This runs all tests, including unit and integration tests. 
+
+NOTE: due to light client support instability, integration test `test_light_client` can fail sometimes. This is due to the fact that light client is not always able to sync with the latest block. If you see this error, please try again.

@@ -19,8 +19,8 @@ const CHAIN_SPEC: &str = "./specs/polkadot.json";
 const POLKADOT_RPC: &str = "wss://polkadot.dotters.network";
 
 async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
-    // let binary_path = "/Users/dastansamat/.cargo/target/debug/subeth";
-    let binary_path = "./packages/js/subeth-macos";
+    let binary_path = "/Users/dastansamat/.cargo/target/debug/subeth";
+    // let binary_path = "./packages/js/subeth-macos";
 
     if !std::path::Path::new(&binary_path).exists() {
         return Err(anyhow::anyhow!("Binary not found at {}", binary_path));
@@ -57,10 +57,7 @@ async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
     }
 }
 
-async fn test_base_rpc_calls(
-    ws_client: &jsonrpsee::ws_client::WsClient,
-    is_light_client: bool,
-) -> Result<()> {
+async fn test_base_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Result<()> {
     // eth_protocolVersion
     let protocol_version: u64 = ws_client
         .request("eth_protocolVersion", rpc_params![])
@@ -108,7 +105,6 @@ async fn test_base_rpc_calls(
         .await?;
     assert!(block_by_number.is_some());
 
-    println!("Block number: {:?}", block_number);
     // eth_getTransactionByBlockNumberAndIndex
     let tx = ws_client
         .request::<Option<Transaction>, ArrayParams>(
@@ -318,6 +314,6 @@ async fn test_eth_rpc_url() -> Result<()> {
     let _client = spawn_client(false).await?;
     let url: &str = "ws://127.0.0.1:8545";
     let ws_client = WsClientBuilder::default().build(url).await?;
-    test_base_rpc_calls(&ws_client, false).await?;
+    test_base_rpc_calls(&ws_client).await?;
     Ok(())
 }
