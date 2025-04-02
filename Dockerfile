@@ -16,7 +16,6 @@ COPY specs ./specs
 
 RUN cargo build --release
 
-# Use a scratch image (no OS, ultra-minimal)
 FROM scratch
 
 COPY --from=builder /usr/src/subeth-rpc-adapter/target/release/subeth-rpc-adapter /subeth-rpc-adapter
