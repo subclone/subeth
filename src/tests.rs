@@ -10,7 +10,7 @@ use jsonrpsee::{
     ws_client::WsClientBuilder,
 };
 use sp_core::H256;
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 use tokio::process::Command;
 
 use crate::adapter::StorageKey;
@@ -18,12 +18,25 @@ use crate::adapter::StorageKey;
 const CHAIN_SPEC: &str = "./specs/polkadot.json";
 const POLKADOT_RPC: &str = "wss://polkadot.dotters.network";
 
+fn get_subeth_debug_path() -> PathBuf {
+    // Determine the root target directory (respecting CARGO_TARGET_DIR)
+    let target_root = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
+
+    // Construct the path to the debug directory
+    let mut debug_dir_path = PathBuf::from(target_root);
+    debug_dir_path.push("debug"); // Append 'debug'
+
+    // Append the binary name
+    debug_dir_path.push("subeth"); // Append the binary name 'subeth'
+
+    debug_dir_path // Return the full path
+}
+
 async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
-    let binary_path = "/Users/dastansamat/.cargo/target/debug/subeth";
-    // let binary_path = "./packages/js/subeth-macos";
+    let binary_path = get_subeth_debug_path();
 
     if !std::path::Path::new(&binary_path).exists() {
-        return Err(anyhow::anyhow!("Binary not found at {}", binary_path));
+        return Err(anyhow::anyhow!("Binary not found at {:?}", binary_path));
     }
 
     let mut command = Command::new(&binary_path);
