@@ -1,0 +1,37 @@
+[workspace.package]
+license = "MIT-0"
+authors = ["Parity Technologies <admin@parity.io>"]
+homepage = "https://paritytech.github.io/polkadot-sdk/"
+repository = "https://github.com/paritytech/polkadot-sdk-minimal-template.git"
+edition = "2021"
+
+[workspace]
+default-members = ["pallets/evm-adapter", "runtime"]
+members = [
+    "node",
+    "pallets/evm-adapter",
+    "runtime",
+]
+resolver = "2"
+
+[workspace.dependencies]
+minimal-template-runtime = { path = "./runtime", default-features = false }
+pallet-evm-adapter = { path = "./pallets/evm-adapter", default-features = false }
+clap = { version = "4.5.13" }
+docify = { version = "0.2.9" }
+futures = { version = "0.3.31" }
+futures-timer = { version = "3.0.2" }
+jsonrpsee = { version = "0.24.3" }
+polkadot-sdk = { version = "2503.0.1", default-features = false }
+codec = { version = "3.7.4", default-features = false, package = "parity-scale-codec" }
+scale-info = { version = "2.11.6", default-features = false }
+serde_json = { version = "1.0.132", default-features = false }
+
+[profile.release]
+opt-level = 3
+panic = "unwind"
+
+[profile.production]
+codegen-units = 1
+inherits = "release"
+lto = true
