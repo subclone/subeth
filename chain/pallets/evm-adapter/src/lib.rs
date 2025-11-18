@@ -21,13 +21,11 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-pub mod types;
-
 use alloc::vec::Vec;
 use codec::Decode;
-use polkadot_sdk::polkadot_sdk_frame as frame;
+use polkadot_sdk::{polkadot_sdk_frame as frame, sp_core::{H160, H256, U256}};
 use polkadot_sdk::sp_io::crypto::secp256k1_ecdsa_recover;
-use types::EthereumTransaction;
+use subeth_primitives::EthereumTransaction;
 
 pub use pallet::*;
 
@@ -68,6 +66,7 @@ pub mod pallet {
     }
 
     #[pallet::error]
+    #[derive(PartialEq)]
     pub enum Error<T> {
         /// Invalid signature
         InvalidSignature,
@@ -141,7 +140,7 @@ pub mod pallet {
 
     impl<T: Config> Pallet<T> {
         /// Verify ECDSA signature and recover the signer address
-        fn verify_and_recover_signer(transaction: &EthereumTransaction) -> Result<H160, Error<T>> {
+        pub fn verify_and_recover_signer(transaction: &EthereumTransaction) -> Result<H160, Error<T>> {
             let message_hash = transaction.message_hash();
             let signature = transaction
                 .signature()
@@ -163,7 +162,7 @@ pub mod pallet {
         /// Map an EVM address (H160/AccountId20) to a Substrate account (AccountId32)
         ///
         /// This uses the same logic as in the adapter: hash the address to get AccountId32
-        fn map_address_to_account(address: H160) -> T::AccountId {
+        pub fn map_address_to_account(address: H160) -> T::AccountId {
             let mut input = [0u8; 32];
             input[..20].copy_from_slice(address.as_bytes());
             let hash = polkadot_sdk::sp_io::hashing::blake2_256(&input);
@@ -171,7 +170,7 @@ pub mod pallet {
         }
 
         /// Map a pallet name to an EVM address (reverse of what adapter does)
-        fn pallet_name_from_address(address: H160) -> Option<Vec<u8>> {
+        pub fn pallet_name_from_address(address: H160) -> Option<Vec<u8>> {
             // Try to convert the address to a string (pallet name)
             let bytes = address.as_bytes();
             let name_bytes: Vec<u8> = bytes.iter().copied().take_while(|&b| b != 0).collect();
@@ -187,7 +186,7 @@ pub mod pallet {
         ///
         /// The transaction's `to` field contains the pallet name (first 8 chars as bytes)
         /// The transaction's `data` field contains the encoded call
-        fn decode_call(
+        pub fn decode_call(
             transaction: &EthereumTransaction,
         ) -> Result<<T as Config>::RuntimeCall, Error<T>> {
             // Get pallet name from `to` address

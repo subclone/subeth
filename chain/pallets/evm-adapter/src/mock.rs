@@ -34,17 +34,5 @@ impl pallet_evm_adapter::Config for Test {
 
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	let mut t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
-
-	pallet_balances::GenesisConfig::<Test> {
-		balances: vec![
-			// Fund some test accounts
-			([1u8; 32].into(), 1000000),
-			([2u8; 32].into(), 1000000),
-		],
-	}
-	.assimilate_storage(&mut t)
-	.unwrap();
-
-	t.into()
+	frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into()
 }

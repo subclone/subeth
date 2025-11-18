@@ -10,6 +10,7 @@ default-members = ["pallets/evm-adapter", "runtime"]
 members = [
     "node",
     "pallets/evm-adapter",
+    "primitives",
     "runtime",
 ]
 resolver = "2"
@@ -17,6 +18,7 @@ resolver = "2"
 [workspace.dependencies]
 minimal-template-runtime = { path = "./runtime", default-features = false }
 pallet-evm-adapter = { path = "./pallets/evm-adapter", default-features = false }
+subeth-primitives = { path = "./primitives", default-features = false }
 clap = { version = "4.5.13" }
 docify = { version = "0.2.9" }
 futures = { version = "0.3.31" }

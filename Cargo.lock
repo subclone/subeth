@@ -9580,6 +9580,7 @@ dependencies = [
  "env_logger 0.11.6",
  "frame-support",
  "futures",
+ "hex",
  "jsonrpsee 0.22.5",
  "jsonrpsee 0.24.8",
  "log",
@@ -9590,8 +9591,19 @@ dependencies = [
  "serde",
  "serde_json",
  "sp-core",
+ "subeth-primitives",
  "subxt",
  "tokio",
+]
+
+[[package]]
+name = "subeth-primitives"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives 0.8.21",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
 ]
 
 [[package]]
