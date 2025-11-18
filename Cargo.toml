@@ -36,6 +36,8 @@ sc-service = "0.49.0"
 sc-cli = "0.50.0"
 sp-core = "35.0.0"
 env_logger = "0.11.6"
+hex = "0.4"
+subeth-primitives = { path = "./chain/primitives" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }

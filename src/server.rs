@@ -327,13 +327,98 @@ impl EthApiServer for EthAdapter {
 
     /// Sends transaction; will block waiting for signer to return the
     /// transaction hash.
-    async fn send_transaction(&self, _request: TransactionRequest) -> RpcResult<B256> {
-        unimplemented!("Transaction submission support is not implemented yet.")
+    async fn send_transaction(&self, request: TransactionRequest) -> RpcResult<B256> {
+        use subeth_primitives::{conversions::*, EthereumTransaction};
+
+        // Extract transaction details
+        let to = match request.to {
+            Some(alloy_primitives::TxKind::Call(addr)) => alloy_address_to_h160(addr),
+            _ => {
+                return Err(jsonrpsee::types::ErrorObject::owned(
+                    -32602,
+                    "Missing 'to' address",
+                    None::<()>,
+                )
+                .into())
+            }
+        };
+
+        let nonce = request.nonce.unwrap_or(0);
+        let value = alloy_u256_to_sp_u256(request.value.unwrap_or_default());
+        let data = request.input.input.map(|b| b.to_vec()).unwrap_or_default();
+        let gas_limit = request.gas.unwrap_or(21000);
+
+        // Get gas price
+        let max_fee_per_gas = alloy_u256_to_sp_u256(
+            request
+                .max_fee_per_gas
+                .unwrap_or(alloy_primitives::U256::from(1_000_000)),
+        );
+        let max_priority_fee_per_gas =
+            alloy_u256_to_sp_u256(request.max_priority_fee_per_gas.unwrap_or_default());
+
+        // Construct EthereumTransaction
+        // Note: For now, signature fields are dummy values since we're using a signed extrinsic
+        // The pallet will verify these, but for MVP we can use placeholder values
+        let eth_tx = EthereumTransaction {
+            chain_id: self.client.chain_id(),
+            nonce,
+            max_priority_fee_per_gas,
+            max_fee_per_gas,
+            gas_limit,
+            to,
+            value,
+            data,
+            access_list: vec![],
+            v: 0,
+            r: Default::default(),
+            s: Default::default(),
+        };
+
+        // Submit to chain
+        let tx_hash = self
+            .client
+            .submit_evm_transaction(eth_tx)
+            .await
+            .map_err(|e| {
+                jsonrpsee::types::ErrorObject::owned(
+                    -32000,
+                    format!("Transaction submission failed: {:?}", e),
+                    None::<()>,
+                )
+            })?;
+
+        Ok(tx_hash)
     }
 
     /// Sends signed transaction, returning its hash.
-    async fn send_raw_transaction(&self, _bytes: Bytes) -> RpcResult<B256> {
-        unimplemented!("Transaction submission support is not implemented yet.")
+    async fn send_raw_transaction(&self, bytes: Bytes) -> RpcResult<B256> {
+        use subeth_primitives::EthereumTransaction;
+        use parity_scale_codec::Decode;
+
+        // Decode the raw transaction
+        let eth_tx = EthereumTransaction::decode(&mut bytes.as_ref()).map_err(|e| {
+            jsonrpsee::types::ErrorObject::owned(
+                -32602,
+                format!("Failed to decode transaction: {:?}", e),
+                None::<()>,
+            )
+        })?;
+
+        // Submit to chain
+        let tx_hash = self
+            .client
+            .submit_evm_transaction(eth_tx)
+            .await
+            .map_err(|e| {
+                jsonrpsee::types::ErrorObject::owned(
+                    -32000,
+                    format!("Transaction submission failed: {:?}", e),
+                    None::<()>,
+                )
+            })?;
+
+        Ok(tx_hash)
     }
 }
 

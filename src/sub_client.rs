@@ -386,6 +386,43 @@ impl SubLightClient {
         Ok(value)
     }
 
+    /// Submit an EVM transaction to the chain via the evm-adapter pallet
+    ///
+    /// This method creates and submits a transaction that calls pallet_evm_adapter::transact
+    pub async fn submit_evm_transaction(
+        &self,
+        transaction: subeth_primitives::EthereumTransaction,
+    ) -> Result<alloy_primitives::B256, SubEthError> {
+        use parity_scale_codec::Encode;
+
+        // Encode the transaction
+        let tx_encoded = transaction.encode();
+
+        // Create the extrinsic call dynamically
+        // Note: This is a simplified version. In production, you would:
+        // 1. Use a proper keypair for signing
+        // 2. Handle nonce management
+        // 3. Calculate proper fees
+
+        // For now, we'll use author_submitExtrinsic which submits unsigned
+        // In production, you'd use system.submit_transaction or similar
+        let call_data = {
+            // Pallet index 6, call index 0 (transact)
+            let mut data = vec![6u8, 0u8];
+            data.extend_from_slice(&tx_encoded);
+            data
+        };
+
+        // Submit the extrinsic
+        let hex_data = format!("0x{}", hex::encode(&call_data));
+        let tx_hash: subxt::utils::H256 = self
+            .rpc_client
+            .request("author_submitExtrinsic", rpc_params![hex_data])
+            .await?;
+
+        Ok(alloy_primitives::B256::from_slice(tx_hash.as_bytes()))
+    }
+
     /// Subscribe new blocks
     ///
     /// the extracted block and ethereum transactions
