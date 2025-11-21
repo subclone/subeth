@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # Substrate chain node
+  chain:
+    build:
+      context: ./chain
+      dockerfile: Dockerfile
+    container_name: subeth-chain
+    ports:
+      - "9944:9944"  # WebSocket RPC
+      - "9933:9933"  # HTTP RPC
+      - "30333:30333"  # P2P
+    command:
+      - "--dev"
+      - "--rpc-external"
+      - "--rpc-cors=all"
+      - "--rpc-methods=unsafe"
+      - "--unsafe-rpc-external"
+    volumes:
+      - chain-data:/data
+    networks:
+      - subeth-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9933/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # Subeth ETH RPC adapter
+  adapter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: subeth-adapter
+    ports:
+      - "8545:8545"  # ETH RPC port
+    depends_on:
+      chain:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=info
+    command:
+      - "--rpc-url=ws://chain:9944"
+      - "--bind=0.0.0.0:8545"
+    networks:
+      - subeth-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-X", "POST", "-H", "Content-Type: application/json", "-d", "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}", "http://localhost:8545"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Simple dapp frontend
+  dapp:
+    build:
+      context: ./simple-dapp
+      dockerfile: Dockerfile
+    container_name: subeth-dapp
+    ports:
+      - "3000:80"
+    depends_on:
+      adapter:
+        condition: service_healthy
+    networks:
+      - subeth-network
+    environment:
+      - NODE_ENV=production
+
+networks:
+  subeth-network:
+    driver: bridge
+
+volumes:
+  chain-data:
+    driver: local
