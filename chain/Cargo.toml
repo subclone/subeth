@@ -1,19 +1,19 @@
-[workspace.package]
-license = "MIT-0"
-authors = ["Parity Technologies <admin@parity.io>"]
-homepage = "https://paritytech.github.io/polkadot-sdk/"
-repository = "https://github.com/paritytech/polkadot-sdk-minimal-template.git"
-edition = "2021"
-
 [workspace]
-default-members = ["pallets/evm-adapter", "runtime"]
 members = [
     "node",
     "pallets/evm-adapter",
     "primitives",
     "runtime",
 ]
+default-members = ["node"]
 resolver = "2"
+
+[workspace.package]
+license = "MIT-0"
+authors = ["Parity Technologies <admin@parity.io>"]
+homepage = "https://paritytech.github.io/polkadot-sdk/"
+repository = "https://github.com/paritytech/polkadot-sdk-minimal-template.git"
+edition = "2021"
 
 [workspace.dependencies]
 minimal-template-runtime = { path = "./runtime", default-features = false }
