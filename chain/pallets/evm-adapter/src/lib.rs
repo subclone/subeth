@@ -36,8 +36,11 @@ mod tests;
 
 use alloc::vec::Vec;
 use codec::Decode;
-use polkadot_sdk::{polkadot_sdk_frame as frame, sp_core::{H160, H256}};
 use polkadot_sdk::sp_io::crypto::secp256k1_ecdsa_recover;
+use polkadot_sdk::{
+    polkadot_sdk_frame as frame,
+    sp_core::{H160, H256},
+};
 use subeth_primitives::EthereumTransaction;
 
 pub use pallet::*;
@@ -146,7 +149,9 @@ pub mod pallet {
 
     impl<T: Config> Pallet<T> {
         /// Verify ECDSA signature and recover the signer address
-        pub fn verify_and_recover_signer(transaction: &EthereumTransaction) -> Result<H160, Error<T>> {
+        pub fn verify_and_recover_signer(
+            transaction: &EthereumTransaction,
+        ) -> Result<H160, Error<T>> {
             let message_hash = transaction.message_hash();
             let signature = transaction
                 .signature()
