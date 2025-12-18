@@ -1,6 +1,9 @@
 //! Tests for the EVM adapter pallet
 
 use crate::{mock::*, Error};
+use codec::Encode;
+use polkadot_sdk::frame_support::*;
+use polkadot_sdk::pallet_balances;
 use polkadot_sdk::polkadot_sdk_frame::prelude::Dispatchable;
 use polkadot_sdk::sp_core::{H160, H256, U256};
 use subeth_primitives::EthereumTransaction;
@@ -26,7 +29,7 @@ fn test_pallet_name_from_address() {
         let address = H160::from(address_bytes);
 
         let pallet_name = crate::Pallet::<Test>::pallet_name_from_address(address);
-        assert_eq!(pallet_name, Some(b"Balances".to_vec()));
+        assert_eq!(pallet_name, Some("Balances".to_string()));
     });
 }
 
@@ -46,8 +49,7 @@ fn test_pallet_address_encoding() {
             assert!(decoded.is_some());
 
             // The decoded name should match (without null bytes)
-            let decoded_bytes = decoded.unwrap();
-            let decoded_str = String::from_utf8_lossy(&decoded_bytes);
+            let decoded_str = decoded.unwrap();
             assert!(decoded_str.starts_with(&pallet_name.trim_end_matches('\0')));
         }
     });
@@ -325,9 +327,6 @@ fn test_u256_conversion() {
 
 #[test]
 fn test_dispatch_balance_transfer() {
-    use codec::Encode;
-    use polkadot_sdk::frame_support::assert_ok;
-
     new_test_ext().execute_with(|| {
         // Setup: Create accounts and fund the sender
         let sender_h160 = H160::from([1u8; 20]);
@@ -368,7 +367,7 @@ fn test_dispatch_balance_transfer() {
 
         // Decode the call
         let decoded_call = crate::Pallet::<Test>::decode_call(&transaction);
-        assert_ok!(decoded_call);
+        assert_ok!(decoded_call.clone());
 
         // Check initial balances
         assert_eq!(
@@ -398,8 +397,6 @@ fn test_dispatch_balance_transfer() {
 
 #[test]
 fn test_dispatch_balance_transfer_insufficient_funds() {
-    use codec::Encode;
-
     new_test_ext().execute_with(|| {
         // Setup: Create accounts but don't fund the sender
         let sender_h160 = H160::from([1u8; 20]);
@@ -440,9 +437,6 @@ fn test_dispatch_balance_transfer_insufficient_funds() {
 
 #[test]
 fn test_dispatch_force_transfer_as_root() {
-    use codec::Encode;
-    use polkadot_sdk::frame_support::assert_ok;
-
     new_test_ext().execute_with(|| {
         // Setup accounts
         let source = crate::Pallet::<Test>::map_address_to_account(H160::from([1u8; 20]));
@@ -501,9 +495,6 @@ fn test_dispatch_force_transfer_as_root() {
 
 #[test]
 fn test_dispatch_multiple_transfers() {
-    use codec::Encode;
-    use polkadot_sdk::frame_support::assert_ok;
-
     new_test_ext().execute_with(|| {
         // Setup: Create sender and multiple recipients
         let sender_h160 = H160::from([1u8; 20]);
@@ -528,7 +519,7 @@ fn test_dispatch_multiple_transfers() {
 
             let call = RuntimeCall::Balances(pallet_balances::Call::transfer_allow_death {
                 dest: recipient.clone(),
-                value: amount,
+                value: amount as u64,
             });
 
             let call_data = call.encode();
@@ -555,7 +546,7 @@ fn test_dispatch_multiple_transfers() {
             // Verify recipient received funds
             assert_eq!(
                 pallet_balances::Pallet::<Test>::free_balance(recipient),
-                amount
+                amount as u64
             );
         }
 
@@ -570,9 +561,6 @@ fn test_dispatch_multiple_transfers() {
 
 #[test]
 fn test_transact_extrinsic_success() {
-    use codec::Encode;
-    use polkadot_sdk::frame_support::assert_ok;
-
     new_test_ext().execute_with(|| {
         // Setup accounts
         let sender_h160 = H160::from([1u8; 20]);

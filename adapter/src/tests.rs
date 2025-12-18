@@ -10,7 +10,7 @@ use jsonrpsee::{
     ws_client::WsClientBuilder,
 };
 use parity_scale_codec::Encode;
-use sp_core::{H160, H256, U256 as SpU256};
+use sp_core::{Pair, H160, H256, U256 as SpU256};
 use std::{path::PathBuf, time::Duration};
 use subeth_primitives::EthereumTransaction;
 use tokio::process::Command;
@@ -23,15 +23,14 @@ const POLKADOT_RPC: &str = "wss://polkadot.dotters.network";
 fn get_subeth_debug_path() -> PathBuf {
     // Determine the root target directory (respecting CARGO_TARGET_DIR)
     // In a workspace, target is at the workspace root, not in the member directory
-    let target_root = std::env::var("CARGO_TARGET_DIR")
-        .unwrap_or_else(|_| {
-            // Try workspace root target first
-            if PathBuf::from("../target").exists() {
-                "../target".to_string()
-            } else {
-                "target".to_string()
-            }
-        });
+    let target_root = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| {
+        // Try workspace root target first
+        if PathBuf::from("../target").exists() {
+            "../target".to_string()
+        } else {
+            "target".to_string()
+        }
+    });
 
     // Construct the path to the debug directory
     let mut debug_dir_path = PathBuf::from(target_root);
@@ -43,7 +42,7 @@ fn get_subeth_debug_path() -> PathBuf {
     debug_dir_path // Return the full path
 }
 
-async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
+async fn spawn_client(use_light_client: bool, url: Option<&str>) -> Result<tokio::process::Child> {
     let binary_path = get_subeth_debug_path();
 
     if !std::path::Path::new(&binary_path).exists() {
@@ -60,7 +59,7 @@ async fn spawn_client(use_light_client: bool) -> Result<tokio::process::Child> {
             .arg("--rpc-port")
             .arg("8546");
     } else {
-        command.arg("--url").arg(POLKADOT_RPC);
+        command.arg("--url").arg(url.unwrap_or(POLKADOT_RPC));
     }
     command.kill_on_drop(true);
 
@@ -287,7 +286,7 @@ async fn test_base_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Resu
 
 #[tokio::test]
 async fn test_eth_rpc_light_client() -> Result<()> {
-    let _client = spawn_client(true).await?;
+    let _client = spawn_client(true, None).await?;
     let url: &str = "ws://127.0.0.1:8546";
     let ws_client = WsClientBuilder::default().build(url).await?;
     // eth_protocolVersion
@@ -342,7 +341,7 @@ async fn test_eth_rpc_light_client() -> Result<()> {
 
 #[tokio::test]
 async fn test_eth_rpc_url() -> Result<()> {
-    let _client = spawn_client(false).await?;
+    let _client = spawn_client(false, None).await?;
     let url: &str = "ws://127.0.0.1:8545";
     let ws_client = WsClientBuilder::default().build(url).await?;
     test_base_rpc_calls(&ws_client).await?;
@@ -409,7 +408,10 @@ fn test_transfer_transaction_construction() {
 
     // Step 1: Define recipient AccountId32
     let recipient_account = [0xbb; 32];
-    println!("Recipient AccountId32: 0x{}", hex::encode(recipient_account));
+    println!(
+        "Recipient AccountId32: 0x{}",
+        hex::encode(recipient_account)
+    );
 
     // Step 2: Define transfer amount
     let amount: u128 = 1_000_000_000_000; // 1 token with 12 decimals
@@ -417,8 +419,8 @@ fn test_transfer_transaction_construction() {
 
     // Step 3: SCALE encode the RuntimeCall
     // Balances::transfer_allow_death { dest, value }
-    let pallet_index: u8 = 5;  // Balances pallet (check metadata)
-    let call_index: u8 = 0;    // transfer_allow_death
+    let pallet_index: u8 = 5; // Balances pallet (check metadata)
+    let call_index: u8 = 0; // transfer_allow_death
 
     let mut call_data = Vec::new();
     call_data.push(pallet_index);
@@ -455,7 +457,10 @@ fn test_transfer_transaction_construction() {
     println!("  Hex: 0x{}", hex::encode(&encoded));
 
     println!("\n✅ Transaction ready to submit via eth_sendRawTransaction");
-    println!("   RPC call: eth_sendRawTransaction(\"0x{}\")", hex::encode(&encoded));
+    println!(
+        "   RPC call: eth_sendRawTransaction(\"0x{}\")",
+        hex::encode(&encoded)
+    );
 }
 
 /// Test generic SCALE-encoded RuntimeCall dispatch
@@ -476,7 +481,7 @@ fn test_generic_scale_encoded_call_dispatch() {
 
     // Mock SCALE-encoded call: Balances::transfer_allow_death { dest, value }
     let pallet_index: u8 = 5; // Balances pallet
-    let call_index: u8 = 0;   // transfer_allow_death
+    let call_index: u8 = 0; // transfer_allow_death
 
     // Destination: AccountId32 (32 bytes)
     let dest_account = [0xaa; 32];
@@ -528,7 +533,10 @@ fn test_generic_scale_encoded_call_dispatch() {
     let encoded_tx = eth_tx.encode();
     println!("\nEthereumTransaction ready for submission:");
     println!("  To: 0x{}", hex::encode(eth_tx.to.as_bytes()));
-    println!("  Data (SCALE-encoded call): 0x{}", hex::encode(&eth_tx.data));
+    println!(
+        "  Data (SCALE-encoded call): 0x{}",
+        hex::encode(&eth_tx.data)
+    );
     println!("  SCALE-encoded tx length: {} bytes", encoded_tx.len());
 
     // Verify decoding
@@ -631,7 +639,7 @@ fn test_signature_format() {
         value: SpU256::zero(),
         data: vec![],
         access_list: vec![],
-        v: 27,  // Valid recovery ID (27 or 28 in legacy format)
+        v: 27, // Valid recovery ID (27 or 28 in legacy format)
         r: H256::from([0x11; 32]),
         s: H256::from([0x22; 32]),
     };
@@ -656,7 +664,7 @@ fn test_signature_format() {
 
     // Test with invalid recovery ID
     let eth_tx_invalid = EthereumTransaction {
-        v: 30,  // Invalid
+        v: 30, // Invalid
         ..eth_tx
     };
     assert!(eth_tx_invalid.signature().is_err());
@@ -751,8 +759,156 @@ fn test_pallet_address_encoding() {
 
         println!("Pallet: {}", pallet_name);
         println!("  Address: 0x{}", hex::encode(address_bytes));
-        println!("  First 8 bytes: {}", String::from_utf8_lossy(&address_bytes[..8]));
+        println!(
+            "  First 8 bytes: {}",
+            String::from_utf8_lossy(&address_bytes[..8])
+        );
     }
 
     println!("\n✅ Pallet addresses encoded correctly");
+}
+
+/// End-to-end test for balance transfer
+/// Requires a running Substrate node at ws://127.0.0.1:9944
+#[tokio::test]
+async fn test_e2e_balance_transfer() -> Result<()> {
+    // Skip if no local node is running (optional, but good for CI)
+    // For now we assume the user is running it as requested
+
+    // Spawn adapter pointing to local node
+    let _client = spawn_client(false, Some("ws://127.0.0.1:9944")).await?;
+    let url: &str = "ws://127.0.0.1:8545";
+
+    // Wait a bit for adapter to connect
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let ws_client = WsClientBuilder::default().build(url).await?;
+
+    // Alice's private key (standard dev key)
+    // 0xe5be9a5092b81bca64be81d212e7f2f9eba183bb7a90954f7b76361f6edb5c0a
+    let alice_priv_key_bytes =
+        hex::decode("e5be9a5092b81bca64be81d212e7f2f9eba183bb7a90954f7b76361f6edb5c0a").unwrap();
+    let alice_pair = sp_core::ecdsa::Pair::from_seed_slice(&alice_priv_key_bytes).unwrap();
+
+    // Recipient (Bob)
+    // 0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48
+    let bob_account =
+        hex::decode("8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48").unwrap();
+
+    // Amount: 1 Unit (10^12)
+    let amount: u128 = 1_000_000_000_000;
+
+    // SCALE encode the call: Balances::transfer_allow_death
+    // Pallet index 10 (Balances in standard polkadot/substrate node usually, but might be 5)
+    // We should probably check metadata or try both?
+    // In `kitchensink-runtime` (substrate-node-template), Balances is usually index 10.
+    // In `polkadot`, it's 5.
+    // The user didn't specify the runtime. I'll try 10 first as it's common for dev nodes.
+    // Actually, let's use 10.
+    let pallet_index: u8 = 10;
+    let call_index: u8 = 0;
+
+    let mut call_data = Vec::new();
+    call_data.push(pallet_index);
+    call_data.push(call_index);
+    // Dest: MultiAddress::Id (0) + AccountId (32 bytes)
+    // Wait, `transfer_allow_death` takes `MultiAddress`.
+    // MultiAddress::Id is variant 0.
+    call_data.push(0u8); // MultiAddress::Id
+    call_data.extend_from_slice(&bob_account);
+    call_data.extend_from_slice(&parity_scale_codec::Compact(amount).encode());
+
+    // Get nonce
+    // Get nonce
+    let alice_address_bytes: [u8; 20] = hex::decode("f24FF3a9CF04c71Dbc94D0b566f7A27B94566cac")
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let alice_address_h160 = H160::from(alice_address_bytes);
+    // We can use eth_getTransactionCount
+    let nonce_u256: U256 = ws_client
+        .request(
+            "eth_getTransactionCount",
+            rpc_params![format!("0x{:x}", alice_address_h160), "latest"],
+        )
+        .await?;
+    let nonce = nonce_u256.to::<u64>();
+
+    println!("Alice nonce: {}", nonce);
+
+    // Create EthereumTransaction
+    let mut eth_tx = EthereumTransaction {
+        chain_id: 1, // Default chain ID
+        nonce,
+        max_priority_fee_per_gas: SpU256::from(1_000_000_000u128), // 1 Gwei
+        max_fee_per_gas: SpU256::from(10_000_000_000u128),         // 10 Gwei
+        gas_limit: 100000,
+        to: H160::zero(), // Generic dispatch
+        value: SpU256::zero(),
+        data: call_data,
+        access_list: vec![],
+        v: 0,
+        r: H256::zero(),
+        s: H256::zero(),
+    };
+
+    // Sign
+    let message_hash = eth_tx.message_hash();
+    let signature = alice_pair.sign_prehashed(&message_hash);
+
+    // Convert signature to v, r, s
+    // ecdsa signature is 64 bytes (r, s) + 1 byte (v/recovery_id)
+    // sp_core::ecdsa::Signature is [u8; 65]
+    let sig_bytes = signature.0;
+    let r = H256::from_slice(&sig_bytes[0..32]);
+    let s = H256::from_slice(&sig_bytes[32..64]);
+    let v = sig_bytes[64];
+
+    eth_tx.r = r;
+    eth_tx.s = s;
+    eth_tx.v = v as u64 + 27; // Legacy EIP-155? Or just 27/28?
+                              // EthereumTransaction encoding handles EIP-155 if chain_id is set?
+                              // Wait, `EthereumTransaction` struct in `subeth-primitives` has `chain_id`.
+                              // If we use EIP-155, v should be `recovery_id + 35 + chain_id * 2`.
+                              // If legacy, `recovery_id + 27`.
+                              // Let's stick to legacy 27/28 for simplicity if supported, or EIP-155.
+                              // The `signature()` method in `lib.rs` handles `v` conversion.
+                              // Let's try EIP-155.
+                              // v = recovery_id + 35 + chain_id * 2
+                              // v = v + 35 + 1 * 2 = v + 37.
+
+    // Let's try simple 27/28 first.
+    eth_tx.v = v as u64 + 27;
+
+    let encoded_tx = eth_tx.encode();
+    let tx_hex = format!("0x{}", hex::encode(&encoded_tx));
+
+    println!("Sending transaction: {}", tx_hex);
+
+    // Send
+    let tx_hash: H256 = ws_client
+        .request("eth_sendRawTransaction", rpc_params![tx_hex])
+        .await?;
+
+    println!("Transaction submitted! Hash: {:?}", tx_hash);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_fetch_local_metadata() -> Result<()> {
+    // Connect to local node
+    let url = "ws://127.0.0.1:9944";
+    let client = subxt::OnlineClient::<subxt::SubstrateConfig>::from_url(url).await?;
+
+    // Get metadata
+    let metadata = client.metadata();
+    let encoded = metadata.encode();
+
+    // Save to file
+    let path = PathBuf::from("../artifacts/local_metadata.scale");
+    std::fs::write(&path, encoded)?;
+
+    println!("Metadata saved to {:?}", path);
+    Ok(())
 }

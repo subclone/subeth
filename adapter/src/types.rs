@@ -6,15 +6,15 @@ use serde::{Deserialize, Serialize};
 use subxt::blocks::Block;
 use subxt::OnlineClient;
 use subxt::{
-    config::substrate::{BlakeTwo256, SubstrateHeader},
-    Config, PolkadotConfig,
+    config::substrate::{BlakeTwo256, SubstrateExtrinsicParams, SubstrateHeader},
+    Config, PolkadotConfig, SubstrateConfig,
 };
 
 pub type SubstrateBlock = Block<ChainConfig, OnlineClient<ChainConfig>>;
 pub type EthTransaction = Transaction;
 
 /// Subxt mappings
-#[subxt::subxt(runtime_metadata_path = "../artifacts/polkadot_metadata_full.scale")]
+#[subxt::subxt(runtime_metadata_path = "../artifacts/local_metadata.scale")]
 
 mod src_chain {}
 pub use src_chain::*;
@@ -34,12 +34,10 @@ impl Config for ChainConfig {
         (
             subxt::config::signed_extensions::CheckSpecVersion,
             subxt::config::signed_extensions::CheckTxVersion,
-            subxt::config::signed_extensions::CheckNonce,
             subxt::config::signed_extensions::CheckGenesis<Self>,
             subxt::config::signed_extensions::CheckMortality<Self>,
-            subxt::config::signed_extensions::ChargeAssetTxPayment<Self>,
+            subxt::config::signed_extensions::CheckNonce,
             subxt::config::signed_extensions::ChargeTransactionPayment,
-            subxt::config::signed_extensions::CheckMetadataHash,
         ),
     >;
 }

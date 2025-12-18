@@ -8734,6 +8734,7 @@ dependencies = [
 name = "pallet-evm-adapter"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "parity-scale-codec",
  "polkadot-sdk 2503.0.1",
  "scale-info",

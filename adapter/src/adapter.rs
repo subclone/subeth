@@ -9,49 +9,23 @@ use subxt::{metadata::types::StorageHasher, utils::AccountId32};
 /// field contains a SCALE-encoded RuntimeCall that will be decoded and dispatched.
 pub const GENERIC_CALL_ADDRESS: Address = Address::ZERO;
 
-/// Pallet to contract address mapping
-pub(crate) struct PalletContractMapping;
+use subeth_primitives::AddressMapping as PrimitiveAddressMapping;
+pub use subeth_primitives::PalletContractMapping;
 
-impl PalletContractMapping {
-    /// Get the contract address for a given pallet
-    pub fn contract_address(pallet: &str) -> Address {
-        // take only 8 chars from the pallet name
-        let prefix = pallet.chars().take(8).collect::<String>();
-        Self::pad_to_eth_address(&prefix)
-    }
-
-    /// Get the pallet name for a given contract address
-    pub fn pallet_name(address: Address) -> Option<String> {
-        // try to convert the address to a string
-        let prefix = String::from_utf8(address.to_vec()).ok()?;
-        Some(prefix.trim_end_matches('\0').to_string())
-    }
-
-    /// Pad the given string to a valid Ethereum address (20 bytes)
-    fn pad_to_eth_address(prefix: &str) -> Address {
-        let mut address = [0u8; 20];
-        let prefix_bytes = prefix.as_bytes();
-        let len = prefix_bytes.len().min(20);
-        address[..len].copy_from_slice(&prefix_bytes[..len]);
-        Address::from(address)
-    }
-}
 /// Address mapping logic
 pub(crate) struct AddressMapping;
 
 impl AddressMapping {
     /// Hash `AccountId20` to get `AccountId32`
     pub fn to_ss58(address: Address) -> AccountId32 {
-        let mut input = [0u8; 32];
-        input[..20].copy_from_slice(&address.to_vec());
-        let hash = blake2_256(&input);
+        let hash = PrimitiveAddressMapping::to_ss58(address);
         AccountId32::from(hash)
     }
 
     /// Truncate `AccountId32` to get `AccountId20`
     pub fn to_address(account_id: AccountId32) -> Address {
         let inner: &[u8; 32] = account_id.as_ref();
-        Address::from_slice(&inner[..20])
+        PrimitiveAddressMapping::to_address(inner)
     }
 }
 
@@ -123,7 +97,8 @@ mod tests {
     fn test_hash_and_truncate() {
         let address = Address::from([1u8; 20]);
         let expected_account_id =
-            hex::decode("8b304616ddedac8267d0381d53301825902eb056a70fc56b90e84efa492a015b").unwrap();
+            hex::decode("8b304616ddedac8267d0381d53301825902eb056a70fc56b90e84efa492a015b")
+                .unwrap();
         let account_id = AddressMapping::to_ss58(address);
         let account_id_raw: &[u8] = account_id.as_ref();
         assert_eq!(account_id_raw, expected_account_id.as_slice());
@@ -144,23 +119,33 @@ mod tests {
 
         assert_eq!(
             system,
-            "0x53797374656d0000000000000000000000000000".parse::<Address>().unwrap()
+            "0x53797374656d0000000000000000000000000000"
+                .parse::<Address>()
+                .unwrap()
         );
         assert_eq!(
             balances,
-            "0x42616c616e636573000000000000000000000000".parse::<Address>().unwrap()
+            "0x42616c616e636573000000000000000000000000"
+                .parse::<Address>()
+                .unwrap()
         );
         assert_eq!(
             staking,
-            "0x5374616b696e6700000000000000000000000000".parse::<Address>().unwrap()
+            "0x5374616b696e6700000000000000000000000000"
+                .parse::<Address>()
+                .unwrap()
         );
         assert_eq!(
             democracy,
-            "0x64656d6f63726163000000000000000000000000".parse::<Address>().unwrap()
+            "0x64656d6f63726163000000000000000000000000"
+                .parse::<Address>()
+                .unwrap()
         );
         assert_eq!(
             treasury,
-            "0x7472656173757279000000000000000000000000".parse::<Address>().unwrap()
+            "0x7472656173757279000000000000000000000000"
+                .parse::<Address>()
+                .unwrap()
         );
 
         assert_eq!(

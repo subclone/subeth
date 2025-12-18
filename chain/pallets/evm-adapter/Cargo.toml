@@ -12,6 +12,7 @@ publish = false
 codec = { workspace = true }
 scale-info = { workspace = true }
 subeth-primitives = { workspace = true }
+alloy-primitives = { workspace = true }
 
 # Substrate dependencies
 polkadot-sdk = { workspace = true, features = [
@@ -26,6 +27,7 @@ std = [
 	"polkadot-sdk/std",
 	"scale-info/std",
 	"subeth-primitives/std",
+	"alloy-primitives/std",
 ]
 
 try-runtime = [

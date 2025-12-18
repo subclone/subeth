@@ -151,3 +151,51 @@ pub mod conversions {
         H256::from_slice(value.as_slice())
     }
 }
+
+use alloc::string::{String, ToString};
+use sp_core::blake2_256;
+
+/// Pallet to contract address mapping
+pub struct PalletContractMapping;
+
+impl PalletContractMapping {
+    /// Get the contract address for a given pallet
+    pub fn contract_address(pallet: &str) -> Address {
+        // take only 8 chars from the pallet name
+        let prefix = pallet.chars().take(8).collect::<String>();
+        Self::pad_to_eth_address(&prefix)
+    }
+
+    /// Get the pallet name for a given contract address
+    pub fn pallet_name(address: Address) -> Option<String> {
+        // try to convert the address to a string
+        let prefix = String::from_utf8(address.to_vec()).ok()?;
+        Some(prefix.trim_end_matches('\0').to_string())
+    }
+
+    /// Pad the given string to a valid Ethereum address (20 bytes)
+    fn pad_to_eth_address(prefix: &str) -> Address {
+        let mut address = [0u8; 20];
+        let prefix_bytes = prefix.as_bytes();
+        let len = prefix_bytes.len().min(20);
+        address[..len].copy_from_slice(&prefix_bytes[..len]);
+        Address::from(address)
+    }
+}
+
+/// Address mapping logic
+pub struct AddressMapping;
+
+impl AddressMapping {
+    /// Hash `Address` (H160) to get `AccountId32` (as [u8; 32])
+    pub fn to_ss58(address: Address) -> [u8; 32] {
+        let mut input = [0u8; 32];
+        input[..20].copy_from_slice(&address.to_vec());
+        blake2_256(&input)
+    }
+
+    /// Truncate `AccountId32` (as [u8; 32]) to get `Address` (H160)
+    pub fn to_address(account_id: &[u8; 32]) -> Address {
+        Address::from_slice(&account_id[..20])
+    }
+}
