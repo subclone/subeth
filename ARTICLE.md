@@ -1,106 +1,105 @@
-# Subeth: A Different Approach to EVM Compatibility for Substrate Chains
-
-If you've worked in the Polkadot ecosystem, you've probably encountered the challenge of making Substrate chains accessible to Ethereum developers and tools. The most common solution, Frontier, requires embedding an entire EVM runtime into your chain. But what if there was a lighter way?
+# SubEth: Bridging Ethereum Tools to Substrate Chains
 
 ## The Problem
 
-Ethereum has the largest developer ecosystem in Web3. Millions of developers know Solidity, use MetaMask, and rely on tools like Foundry and web3.js. Meanwhile, Substrate offers superior architecture and flexibility but requires learning new paradigms and tools.
+The Polkadot ecosystem is powerful, but for developers coming from Ethereum, the learning curve can be steep. They have to leave behind their favorite tools like MetaMask, Hardhat, and Ethers.js because Substrate uses a completely different RPC standard and transaction format. What if you could use standard Ethereum tools to interact directly with a native Substrate chain, without a full EVM implementation like Frontier?
 
-Existing solutions typically require:
-- Major runtime modifications
-- Embedding EVM execution engines
-- Custom client implementations
-- Modified developer tooling
+## The Solution
 
-This complexity creates a high barrier for chains wanting Ethereum compatibility and for developers wanting to interact with Substrate chains.
+**SubEth** is a lightweight compatibility layer that bridges this gap. It consists of two main components:
+1.  **The Adapter (`subeth`)**: A standalone RPC server that speaks "Ethereum" to your wallet and "Substrate" to your node.
+2.  **The Pallet (`pallet-evm-adapter`)**: A runtime module that understands these translated transactions and executes them as native Substrate calls.
 
-## A Simpler Approach
-
-Subeth takes a different path: instead of bringing the EVM to Substrate, it translates Ethereum's language to Substrate's.
-
-The architecture is straightforward:
-1. A standalone adapter service that speaks Ethereum JSON-RPC
-2. An optional runtime pallet for write operations
-3. No changes to the Substrate client
-4. No embedded EVM execution engine
-
-When you connect MetaMask to a Subeth-enabled chain, it just works. The adapter translates `eth_getBalance` to the equivalent Substrate RPC call. From MetaMask's perspective, it's talking to an Ethereum node. From the Substrate chain's perspective, nothing unusual is happening.
+Unlike full EVM solutions, SubEth doesn't run an EVM inside your runtime. Instead, it maps Ethereum transactions directly to Substrate pallet calls. This means you can use MetaMask to call `Balances::transfer` or any other pallet function!
 
 ## How It Works
 
-**Reading State**: The adapter maps each pallet to a unique Ethereum address. Want to query the Balances pallet? It gets a deterministic address like `0x42616c616e636573...`. Use standard `eth_call` to read any storage item from any pallet. Your familiar Ethereum tools now read Substrate state.
+The magic happens in the translation layer. Here is the high-level flow:
 
-**Writing Transactions**: This requires a small runtime pallet. It verifies Ethereum signatures, maps addresses between formats, and dispatches calls. Sign a transaction with MetaMask, and the pallet executes it on-chain. The pallet is lightweight—no EVM execution, just signature verification and call dispatch.
+![SubEth Architecture](docs/diagram-subeth.png)
 
-**Trustless by Default**: The adapter runs an embedded light client (smoldot) for trustless access. No need to trust external RPC nodes. You can optionally connect to a remote node for speed, but the default is secure.
+### 1. The Adapter: The Translator
 
-## What Makes This Different
+The adapter sits between your Ethereum tool and the Substrate node. When you send a transaction, the adapter intercepts it. It doesn't just forward bytes; it understands them.
 
-**Frontier** is comprehensive but heavy. It embeds a full EVM runtime and modifies both node and client. Great if you need 100% EVM compatibility, but overkill if you just want Ethereum tools to work.
+It uses a "Light Client" approach (powered by `subxt`) to fetch metadata from the chain, so it knows exactly how to construct valid Substrate extrinsics.
 
-**Acala EVM+** takes a similar approach but requires custom tooling (`bodhi.js` instead of `web3.js`) and is tailored to Acala Network.
+**Pseudocode: Handling a Transaction**
 
-**Polkamask** is a browser extension that helps MetaMask work with Substrate, but it's MetaMask-specific and requires trusting a plugin.
+```rust
+fn handle_eth_tx(tx: EthTransaction) {
+    // 1. Decode the "to" address to find the target Pallet
+    let pallet_name = lookup_pallet_name(tx.to); 
+    // e.g., 0x... -> "Balances"
 
-**Subeth** is deliberately minimal. Standard tools. No custom plugins. Works with any Substrate chain. Read access needs zero runtime changes. Write access needs one small pallet.
+    // 2. The 'data' field contains the SCALE encoded call
+    let call_data = tx.data;
 
-## Real-World Use Cases
+    // 3. Construct unsigned extrinsic
+    let extrinsic = SubstrateExtrinsic {
+        signature: sign_with_adapter_key(tx), // or user signature mapping
+        call: Call::EvmAdapter(
+            // We wrap the original ETH tx so the runtime can verify the signer
+            original_tx: tx 
+        )
+    };
 
-**Block Explorers**: Build Ethereum-style explorers for Substrate chains using existing indexer infrastructure. No need to learn Substrate-specific APIs.
-
-**Data Analytics**: Query Substrate chain state using your existing Ethereum analytics tools and pipelines.
-
-**Developer Onboarding**: Let Ethereum developers interact with your Substrate chain using tools they already know before investing time to learn Substrate-native development.
-
-**Multi-Chain Apps**: Build applications that work across Ethereum and Substrate chains using a single codebase and toolset.
-
-**Testing and Development**: Use Foundry, Hardhat, or other Ethereum development tools to test interactions with Substrate chains.
-
-## Trade-offs
-
-This isn't "full" EVM compatibility. You can't deploy Solidity contracts (unless you also add pallet-evm). Transaction hashes work differently. Gas is estimated rather than precisely calculated. Account models require mapping.
-
-But that's the point. Not every chain needs full EVM compatibility. Sometimes you just want Ethereum tools to work with your existing Substrate runtime. Subeth optimizes for developer experience and minimal integration cost, not for running Uniswap clones.
-
-## Getting Started
-
-The stack runs in three commands:
-```bash
-# Start the chain
-cargo run --release
-
-# Start the adapter
-cargo run --release -- --rpc-url ws://localhost:9944
-
-# Or use Docker
-docker-compose up
+    // 4. Submit to Node
+    node_client.submit(extrinsic).await;
+}
 ```
 
-Point MetaMask at `http://localhost:8545` and you're reading Substrate state through Ethereum RPC. Add the adapter pallet to your runtime and you can send transactions too.
+### 2. The Pallet: The Executor
 
-The demo dapp shows it working: connect MetaMask, check your balance, send a transfer. Standard Ethereum UX, Substrate chain underneath.
+On the runtime side, the `pallet-evm-adapter` receives this special call. Its job is to unwrap the Ethereum transaction, verify the signature (recovering the Ethereum address), and then dispatch the actual call to the target pallet.
 
-## What's Next
+**Pseudocode: Dispatching the Call**
 
-The current implementation proves the concept works. Future improvements could include:
-- Removing the pallet requirement by handling more logic in the adapter
-- Expanding RPC method coverage (logs, filters, more subscription types)
-- Better gas estimation using runtime APIs
-- Multi-chain proxy service for accessing multiple Substrate chains through one adapter
+```rust
+fn transact(origin, transaction: EthTransaction) {
+    // 1. Verify signature and recover signer
+    let signer_eth_address = transaction.recover_signer()?;
+    
+    // 2. Map ETH address to Substrate AccountId
+    let who = map_to_account_id(signer_eth_address);
 
-The goal isn't to replace Frontier or become the definitive EVM solution. It's to provide an alternative for chains that want Ethereum tool compatibility without the complexity of full EVM integration.
+    // 3. Decode the destination
+    let target_pallet = decode_pallet_name(transaction.to);
 
-## Try It
+    // 4. Dispatch the call
+    if target_pallet == "Balances" {
+        // The 'data' is decoded as arguments for transfer
+        let (dest, amount) = decode_args(transaction.data);
+        Balances::transfer(who, dest, amount)?;
+    } else {
+        // Generic dispatch
+        dispatch_call(who, target_pallet, transaction.data)?;
+    }
+}
+```
 
-Subeth is open source and ready to test:
-- **Code**: [github.com/dastansam/subeth](https://github.com/dastansam/subeth)
-- **Quick Start**: Clone, run `docker-compose up`, open the demo at `localhost:3000`
-- **Documentation**: See INSTRUCTIONS.md for architecture details
+### 3. Pallet Addressing: The Clever Trick
 
-If you're building a Substrate chain and want Ethereum developers to easily interact with it, or if you're an Ethereum developer curious about Substrate, give it a try.
+How do we tell MetaMask to call the "Balances" pallet? Ethereum transactions expect a 20-byte address, not a string.
 
-The Polkadot ecosystem benefits from multiple approaches to EVM compatibility. Subeth adds a lightweight option to the toolkit.
+SubEth uses a deterministic mapping:
+- **"Balances"** -> `0x42616c616e636573000000000000000000000000` (Hex encoding of the string, padded)
 
----
+So when you send ETH to this address in MetaMask, the Adapter knows you really mean to talk to the Balances pallet.
 
-*This project was built with support from the Web3 Foundation Grants Program.*
+## Technical Highlights
+
+### Address Mapping
+We need a way to represent Ethereum users (`H160`) on Substrate (`AccountId32`). We use a hashing scheme:
+`AccountId = Blake2_256(EthereumAddress)`
+
+This ensures every Ethereum user has a unique, deterministic Substrate account.
+
+### Zero-Config Metadata
+The adapter fetches the runtime metadata automatically. This means if you upgrade your runtime to add a new pallet, the adapter instantly knows about it without recompilation.
+
+## Conclusion
+
+SubEth opens the door for a hybrid future. You can build specialized Substrate chains with custom logic, while still allowing users to onboard with the wallets they already know and love. It's not about replacing Substrate tools, but about expanding the ecosystem's reach.
+
+**Explore the Code:** [github.com/element36-io/subeth](https://github.com/element36-io/subeth)
