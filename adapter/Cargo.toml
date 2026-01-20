@@ -12,6 +12,9 @@ std = [
     "serde_json/std",
     "parity-scale-codec/std",
 ]
+# Use Polkadot metadata for connecting to live Polkadot network
+# Default uses local chain metadata
+polkadot = []
 
 [dependencies]
 jsonrpsee = { version = "^0.24", features = ["async-client", "jsonrpsee-types", "server", "jsonrpsee-proc-macros", "macros"]}
@@ -38,6 +41,7 @@ sp-core = "35.0.0"
 env_logger = "0.11.6"
 hex = "0.4"
 subeth-primitives = { path = "../chain/primitives" }
+subxt-signer = { version = "0.40.0", features = ["sr25519"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }

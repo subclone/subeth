@@ -5,42 +5,27 @@ use jsonrpsee::types::ErrorObject;
 use serde::{Deserialize, Serialize};
 use subxt::blocks::Block;
 use subxt::OnlineClient;
-use subxt::{
-    config::substrate::{BlakeTwo256, SubstrateExtrinsicParams, SubstrateHeader},
-    Config, PolkadotConfig, SubstrateConfig,
-};
+/// Chain configuration - uses PolkadotConfig for Polkadot, SubstrateConfig for local chain
+#[cfg(feature = "polkadot")]
+pub type ChainConfig = subxt::PolkadotConfig;
+
+#[cfg(not(feature = "polkadot"))]
+pub type ChainConfig = subxt::SubstrateConfig;
 
 pub type SubstrateBlock = Block<ChainConfig, OnlineClient<ChainConfig>>;
 pub type EthTransaction = Transaction;
 
-/// Subxt mappings
-#[subxt::subxt(runtime_metadata_path = "../artifacts/local_metadata.scale")]
-
+/// Subxt mappings - uses Polkadot metadata when `polkadot` feature is enabled,
+/// otherwise uses local chain metadata for development/testing with local node.
+#[cfg(feature = "polkadot")]
+#[subxt::subxt(runtime_metadata_path = "../artifacts/polkadot_metadata_full.scale")]
 mod src_chain {}
-pub use src_chain::*;
 
-/// Configuration of the chain
-pub enum ChainConfig {}
-impl Config for ChainConfig {
-    type Hash = subxt::utils::H256;
-    type AccountId = <PolkadotConfig as Config>::AccountId;
-    type Address = <PolkadotConfig as Config>::Address;
-    type Signature = <PolkadotConfig as Config>::Signature;
-    type Hasher = BlakeTwo256;
-    type Header = SubstrateHeader<u32, BlakeTwo256>;
-    type AssetId = <PolkadotConfig as Config>::AssetId;
-    type ExtrinsicParams = subxt::config::signed_extensions::AnyOf<
-        Self,
-        (
-            subxt::config::signed_extensions::CheckSpecVersion,
-            subxt::config::signed_extensions::CheckTxVersion,
-            subxt::config::signed_extensions::CheckGenesis<Self>,
-            subxt::config::signed_extensions::CheckMortality<Self>,
-            subxt::config::signed_extensions::CheckNonce,
-            subxt::config::signed_extensions::ChargeTransactionPayment,
-        ),
-    >;
-}
+#[cfg(not(feature = "polkadot"))]
+#[subxt::subxt(runtime_metadata_path = "../artifacts/local_metadata.scale")]
+mod src_chain {}
+
+pub use src_chain::*;
 
 /// General error type for the Subeth library.
 #[derive(Debug, Clone, Serialize, Deserialize)]

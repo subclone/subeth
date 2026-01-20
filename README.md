@@ -53,6 +53,73 @@ Then we can run the tests:
 cargo test
 ```
 
-This runs all tests, including unit and integration tests. 
+This runs all tests, including unit and integration tests.
 
-NOTE: due to light client support instability, integration test `test_light_client` can fail sometimes. This is due to the fact that light client is not always able to sync with the latest block. If you see this error, please try again.
+### Run integration tests with local node
+
+Some integration tests require a running local Substrate node. These tests are marked as `#[ignore]` by default.
+
+#### 1. Start the local Substrate node
+
+First, build and run the test chain:
+
+```sh
+cd chain
+cargo build --release
+cargo run --release -- --dev
+```
+
+This starts a local Substrate node at `ws://127.0.0.1:9944`.
+
+#### 2. Update local chain metadata (if needed)
+
+The adapter uses compile-time metadata from `artifacts/local_metadata.scale`. If your local chain's runtime has changed, you need to regenerate this file:
+
+```sh
+# Option A: Using subxt CLI (recommended)
+cargo install subxt-cli
+subxt metadata --url ws://127.0.0.1:9944 -f bytes > artifacts/local_metadata.scale
+
+# Option B: Using the test helper
+cargo test test_fetch_local_metadata -- --ignored --nocapture
+
+# Then rebuild the adapter with new metadata
+cargo build
+```
+
+#### 3. Run local chain tests
+
+With the local node running and metadata up-to-date:
+
+```sh
+# Run all ignored tests (local chain tests)
+cargo test -- --ignored
+
+# Run a specific ignored test
+cargo test test_e2e_balance_transfer -- --ignored
+```
+
+**Note:** If you see `Metadata(IncompatibleCodegen)` errors, your `local_metadata.scale` doesn't match your running node. Follow step 2 to regenerate it.
+
+### Run Polkadot integration tests
+
+Tests that connect to live Polkadot network require the `polkadot` feature flag:
+
+```sh
+# Run Polkadot integration tests
+cargo test --features polkadot
+
+# Run specific Polkadot test
+cargo test --features polkadot test_eth_rpc_url
+cargo test --features polkadot test_eth_rpc_light_client
+```
+
+NOTE: due to light client support instability, `test_eth_rpc_light_client` can fail sometimes. This is due to the fact that light client is not always able to sync with the latest block. If you see this error, please try again.
+
+### Using Docker Compose
+
+Alternatively, you can use Docker Compose to run both the chain and adapter:
+
+```sh
+docker-compose up
+```

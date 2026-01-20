@@ -14,14 +14,16 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy workspace files
 COPY Cargo.toml Cargo.lock ./
-COPY src ./src
+COPY adapter ./adapter
+COPY chain ./chain
 COPY artifacts ./artifacts
 COPY specs ./specs
 
 # Standard release build, links against glibc in the builder
 # Add --verbose if you need more build output details
-RUN cargo build --release --verbose
+RUN cargo build --release --verbose -p subeth
 
 # --- Final Stage ---
 # Use the corresponding minimal Debian version

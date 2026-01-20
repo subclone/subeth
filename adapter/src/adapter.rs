@@ -7,6 +7,7 @@ use subxt::{metadata::types::StorageHasher, utils::AccountId32};
 /// Reserved address for generic SCALE-encoded RuntimeCall dispatch
 /// When EthereumTransaction.to == GENERIC_CALL_ADDRESS, the transaction.data
 /// field contains a SCALE-encoded RuntimeCall that will be decoded and dispatched.
+#[allow(dead_code)] // Used in tests and for documentation
 pub const GENERIC_CALL_ADDRESS: Address = Address::ZERO;
 
 use subeth_primitives::AddressMapping as PrimitiveAddressMapping;

@@ -27,7 +27,8 @@ use subxt::{lightclient::LightClient, OnlineClient};
 pub struct Properties {
     /// Decimals of the token
     decimals: u32,
-    /// Symbol of the token
+    /// Symbol of the token (reserved for future use)
+    #[allow(dead_code)]
     symbol: String,
 }
 
@@ -396,43 +397,74 @@ impl SubLightClient {
     /// Submit an EVM transaction to the chain via the evm-adapter pallet
     ///
     /// This method creates and submits a transaction that calls pallet_evm_adapter::transact
+    /// For MVP, it uses Alice's dev account to sign the outer extrinsic.
+    /// The inner EVM transaction signature is what authorizes the actual operation.
     pub async fn submit_evm_transaction(
         &self,
         transaction: subeth_primitives::EthereumTransaction,
     ) -> Result<alloy_primitives::B256, SubEthError> {
-        use parity_scale_codec::Encode;
+        use subxt::dynamic::Value;
 
-        // Encode the transaction
-        let tx_encoded = transaction.encode();
+        // For MVP, use Alice's dev account to sign the extrinsic wrapper
+        // The EVM signature inside the transaction is what matters for authorization
+        let alice = subxt_signer::sr25519::dev::alice();
 
-        // Create the extrinsic call dynamically
-        // Note: This is a simplified version. In production, you would:
-        // 1. Use a proper keypair for signing
-        // 2. Handle nonce management
-        // 3. Calculate proper fees
+        // Helper to convert H256 to Value (as 32-byte array)
+        fn h256_to_value(h: &sp_core::H256) -> Value {
+            Value::from_bytes(h.as_bytes())
+        }
 
-        // For now, we'll use author_submitExtrinsic which submits unsigned
-        // In production, you'd use system.submit_transaction or similar
-        let call_data = {
-            // Pallet index 6, call index 0 (transact)
-            let mut data = vec![6u8, 0u8];
-            data.extend_from_slice(&tx_encoded);
-            data
-        };
+        // Helper to convert H160 to Value (as 20-byte array)
+        fn h160_to_value(h: &sp_core::H160) -> Value {
+            Value::from_bytes(h.as_bytes())
+        }
 
-        // Submit the extrinsic
-        let hex_data = format!("0x{}", hex::encode(&call_data));
-        let tx_hash: subxt::utils::H256 = self
-            .rpc_client
-            .request("author_submitExtrinsic", rpc_params![hex_data])
+        // Build access_list as Value
+        let access_list_value: Vec<Value> = transaction.access_list.iter().map(|(addr, keys)| {
+            let keys_values: Vec<Value> = keys.iter().map(h256_to_value).collect();
+            Value::unnamed_composite(vec![
+                h160_to_value(addr),
+                Value::unnamed_composite(keys_values),
+            ])
+        }).collect();
+
+        // Build the EthereumTransaction as a composite Value
+        let u256_values_priority: Vec<Value> = transaction.max_priority_fee_per_gas.0.iter().map(|&w| Value::u128(w as u128)).collect();
+        let u256_values_max_fee: Vec<Value> = transaction.max_fee_per_gas.0.iter().map(|&w| Value::u128(w as u128)).collect();
+        let u256_values_value: Vec<Value> = transaction.value.0.iter().map(|&w| Value::u128(w as u128)).collect();
+
+        let tx_value = Value::unnamed_composite(vec![
+            Value::u128(transaction.chain_id as u128),           // chain_id: u64
+            Value::u128(transaction.nonce as u128),              // nonce: u64
+            Value::unnamed_composite(u256_values_priority),      // max_priority_fee_per_gas: U256
+            Value::unnamed_composite(u256_values_max_fee),       // max_fee_per_gas: U256
+            Value::u128(transaction.gas_limit as u128),          // gas_limit: u64
+            h160_to_value(&transaction.to),                      // to: H160
+            Value::unnamed_composite(u256_values_value),         // value: U256
+            Value::from_bytes(&transaction.data),                // data: Vec<u8>
+            Value::unnamed_composite(access_list_value),         // access_list: Vec<(H160, Vec<H256>)>
+            Value::u128(transaction.v as u128),                  // v: u64
+            h256_to_value(&transaction.r),                       // r: H256
+            h256_to_value(&transaction.s),                       // s: H256
+        ]);
+
+        // Build the call dynamically: evm_adapter::transact(transaction)
+        let call = subxt::dynamic::tx("EvmAdapter", "transact", vec![tx_value]);
+
+        // Sign and submit
+        let tx_hash = self
+            .api
+            .tx()
+            .sign_and_submit_default(&call, &alice)
             .await?;
 
-        Ok(alloy_primitives::B256::from_slice(tx_hash.as_bytes()))
+        Ok(alloy_primitives::B256::from_slice(tx_hash.0.as_slice()))
     }
 
     /// Subscribe new blocks
     ///
     /// the extracted block and ethereum transactions
+    #[allow(dead_code)] // Called from handle_accepted_subscription
     async fn subscribe_new_blocks(
         &self,
         subscription_kind: SubscriptionKind,
@@ -459,6 +491,7 @@ impl SubLightClient {
 /// Handle accepted subscription
 ///
 /// Pipes the block stream to the subscription sink
+#[allow(dead_code)] // Called from server.rs EthPubSubApiServer implementation
 pub async fn handle_accepted_subscription(
     client: SubLightClient,
     kind: SubscriptionKind,

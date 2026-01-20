@@ -17,7 +17,9 @@ use tokio::process::Command;
 
 use crate::adapter::StorageKey;
 
+#[allow(dead_code)]
 const CHAIN_SPEC: &str = "../specs/polkadot.json";
+#[allow(dead_code)]
 const POLKADOT_RPC: &str = "wss://polkadot.dotters.network";
 
 fn get_subeth_debug_path() -> PathBuf {
@@ -42,7 +44,7 @@ fn get_subeth_debug_path() -> PathBuf {
     debug_dir_path // Return the full path
 }
 
-async fn spawn_client(use_light_client: bool, url: Option<&str>) -> Result<tokio::process::Child> {
+async fn spawn_client(use_light_client: bool, url: Option<&str>, port: u16) -> Result<tokio::process::Child> {
     let binary_path = get_subeth_debug_path();
 
     if !std::path::Path::new(&binary_path).exists() {
@@ -55,22 +57,23 @@ async fn spawn_client(use_light_client: bool, url: Option<&str>) -> Result<tokio
             .arg("--chain-spec")
             .arg(CHAIN_SPEC)
             .arg("--max-retries")
-            .arg("3")
-            .arg("--rpc-port")
-            .arg("8546");
+            .arg("3");
     } else {
         command.arg("--url").arg(url.unwrap_or(POLKADOT_RPC));
     }
-    command.kill_on_drop(true);
+    command
+        .arg("--rpc-port")
+        .arg(port.to_string())
+        .kill_on_drop(true);
 
     let mut child = command
         .spawn()
         .map_err(|e| anyhow::anyhow!("Failed to start client: {}", e))?;
 
-    tokio::time::sleep(Duration::from_secs(10)).await; // Wait for client to stabilize
+    tokio::time::sleep(Duration::from_secs(25)).await; // Wait for client to stabilize
 
     if use_light_client {
-        tokio::time::sleep(Duration::from_secs(40)).await; // Wait for client to stabilize
+        tokio::time::sleep(Duration::from_secs(95)).await; // Additional wait for light client sync
     }
 
     match child.try_wait() {
@@ -80,6 +83,7 @@ async fn spawn_client(use_light_client: bool, url: Option<&str>) -> Result<tokio
     }
 }
 
+#[allow(dead_code)]
 async fn test_base_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Result<()> {
     // eth_protocolVersion
     let protocol_version: u64 = ws_client
@@ -284,9 +288,14 @@ async fn test_base_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Resu
     Ok(())
 }
 
+/// Test ETH RPC with light client connecting to Polkadot
+/// Requires `polkadot` feature: cargo test --features polkadot test_eth_rpc_light_client -- --ignored
+/// NOTE: Light client support is experimental and this test may take several minutes to sync
+#[cfg(feature = "polkadot")]
 #[tokio::test]
+#[ignore = "Light client sync is slow/unstable - run explicitly with --ignored"]
 async fn test_eth_rpc_light_client() -> Result<()> {
-    let _client = spawn_client(true, None).await?;
+    let _client = spawn_client(true, None, 8546).await?;
     let url: &str = "ws://127.0.0.1:8546";
     let ws_client = WsClientBuilder::default().build(url).await?;
     // eth_protocolVersion
@@ -339,10 +348,13 @@ async fn test_eth_rpc_light_client() -> Result<()> {
     Ok(())
 }
 
+/// Test ETH RPC connecting to Polkadot via RPC URL
+/// Requires `polkadot` feature: cargo test --features polkadot test_eth_rpc_url
+#[cfg(feature = "polkadot")]
 #[tokio::test]
 async fn test_eth_rpc_url() -> Result<()> {
-    let _client = spawn_client(false, None).await?;
-    let url: &str = "ws://127.0.0.1:8545";
+    let _client = spawn_client(false, None, 8547).await?;
+    let url: &str = "ws://127.0.0.1:8547";
     let ws_client = WsClientBuilder::default().build(url).await?;
     test_base_rpc_calls(&ws_client).await?;
     Ok(())
@@ -769,14 +781,17 @@ fn test_pallet_address_encoding() {
 }
 
 /// End-to-end test for balance transfer
-/// Requires a running Substrate node at ws://127.0.0.1:9944
+/// Requires the custom chain with EvmAdapter pallet running at ws://127.0.0.1:9944
+/// Run: cd chain && cargo run --release -- --dev
+/// Then: cargo test test_e2e_balance_transfer -- --ignored
 #[tokio::test]
+#[ignore = "Requires custom chain with EvmAdapter pallet (cd chain && cargo run -- --dev)"]
 async fn test_e2e_balance_transfer() -> Result<()> {
     // Skip if no local node is running (optional, but good for CI)
     // For now we assume the user is running it as requested
 
     // Spawn adapter pointing to local node
-    let _client = spawn_client(false, Some("ws://127.0.0.1:9944")).await?;
+    let _client = spawn_client(false, Some("ws://127.0.0.1:9944"), 8545).await?;
     let url: &str = "ws://127.0.0.1:8545";
 
     // Wait a bit for adapter to connect
@@ -895,7 +910,11 @@ async fn test_e2e_balance_transfer() -> Result<()> {
     Ok(())
 }
 
+/// Fetches metadata from a local Substrate node and saves it to artifacts/
+/// Requires a running Substrate node at ws://127.0.0.1:9944
+/// Run with: cargo test test_fetch_local_metadata -- --ignored
 #[tokio::test]
+#[ignore = "Requires local Substrate node at ws://127.0.0.1:9944"]
 async fn test_fetch_local_metadata() -> Result<()> {
     // Connect to local node
     let url = "ws://127.0.0.1:9944";
