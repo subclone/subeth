@@ -1,6 +1,6 @@
 //! # Subeth RPC adapter
 //!
-//! Exposes an ETH RPC interface from an underlying Substrate light client or RPC url. This allows
+//! Exposes an ETH RPC interface from an underlying Substrate light client or RPC url. This
 //! allows using different Ethereum tools and libraries with Substrate chains, for reading the chain state,
 //! indexing, and making generic RPC calls.
 //!
@@ -38,12 +38,13 @@ fn init_logger() {
 
 #[tokio::main]
 async fn main() {
-    println!("Subeth RPC adapter!");
     init_logger();
+    info!("Subeth RPC adapter v{}", env!("CARGO_PKG_VERSION"));
 
     let opts = command::Opts::parse();
 
     if let Err(e) = command::run(opts).await {
-        eprintln!("Error: {:?}", e);
+        log::error!("Fatal error: {:?}", e);
+        std::process::exit(1);
     }
 }
