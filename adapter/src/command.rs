@@ -57,12 +57,6 @@ pub async fn block_until_sigint() {
     ctrlc_oneshot.await.unwrap();
 }
 
-fn tokio_runtime() -> Result<tokio::runtime::Runtime, tokio::io::Error> {
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-}
-
 pub async fn run(opts: Opts) -> anyhow::Result<()> {
     let chain_id = opts.chain_id;
 
@@ -85,8 +79,9 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
 
     log::info!("Connected to chain: {}", client.chain_id());
 
-    let tokio_runtime = tokio_runtime()?;
-    let tokio_handle = tokio_runtime.handle();
+    // Reuse the runtime started by `#[tokio::main]`; creating (and later dropping) a nested
+    // runtime from within an async context panics on shutdown.
+    let tokio_handle = tokio::runtime::Handle::current();
 
     let mut task_manager = sc_service::TaskManager::new(tokio_handle.clone(), None)?;
 
@@ -130,18 +125,14 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
     let eth_rpc_handle = sc_service::start_rpc_servers(
         &rpc_config,
         None,
-        tokio_handle,
+        &tokio_handle,
         || Ok(gen_rpc_module.clone()),
         None,
     )?;
 
     task_manager.keep_alive(eth_rpc_handle);
 
-    // // block until ctrl-c is received
-    // let signals = tokio_runtime.block_on(async { sc_cli::Signals::capture() })?;
-    // tokio_runtime.block_on(signals.run_until_signal(task_manager.future().fuse()))?;
     block_until_sigint().await;
 
-    tokio_runtime.shutdown_timeout(std::time::Duration::from_secs(10));
     Ok(())
 }
