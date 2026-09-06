@@ -21,7 +21,7 @@ pub struct Opts {
     /// Chain ID
     #[clap(long, default_value = "42")]
     chain_id: u64,
-    /// Maximum retries for light client initialization
+    /// Maximum retries for client initialization
     #[clap(long, default_value = "3")]
     max_retries: u32,
     /// Rpc params
@@ -40,21 +40,36 @@ async fn block_until_sigint() -> anyhow::Result<()> {
 pub async fn run(opts: Opts) -> anyhow::Result<()> {
     let chain_id = opts.chain_id;
 
-    // figure out if we are relying on a smoldot node or RPC node
-    let client = if let Some(chain_spec_path) = opts.chain_spec {
-        // load the chain spec file
-        log::info!("Loading chain spec from: {}", chain_spec_path);
-        let chain_spec = std::fs::read_to_string(&chain_spec_path)?;
+    let chain_spec = match &opts.chain_spec {
+        Some(path) => {
+            log::info!("Loading chain spec from: {}", path);
+            Some(std::fs::read_to_string(path)?)
+        }
+        None => None,
+    };
+    let url = opts.url.as_deref().unwrap_or(DEFAULT_URL);
 
-        SubLightClient::from_light_client(&chain_spec, chain_id, None).await?
-    } else if let Some(url) = opts.url {
-        // create a new RPC client
-        SubLightClient::from_url(&url, chain_id, None).await?
-    } else {
-        // default to a Polkadot node
-        // let polkadot_spec = include_str!("../specs/polkadot.json");
-        // SubLightClient::from_light_client(polkadot_spec, chain_id, None).await?
-        SubLightClient::from_url(DEFAULT_URL, chain_id, None).await?
+    // figure out if we are relying on a smoldot node or RPC node, retrying on failure
+    let mut attempt = 0;
+    let client = loop {
+        attempt += 1;
+        let result = match &chain_spec {
+            Some(spec) => SubLightClient::from_light_client(spec, chain_id, None).await,
+            None => SubLightClient::from_url(url, chain_id, None).await,
+        };
+        match result {
+            Ok(client) => break client,
+            Err(e) if attempt <= opts.max_retries => {
+                log::warn!(
+                    "Failed to connect (attempt {}/{}): {:?}",
+                    attempt,
+                    opts.max_retries + 1,
+                    e
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt))).await;
+            }
+            Err(e) => return Err(e),
+        }
     };
 
     log::info!("Connected to chain: {}", client.chain_id());
