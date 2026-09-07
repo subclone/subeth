@@ -18,7 +18,6 @@ use traits::{EthApiServer, EthPubSubApiServer};
 pub type SubscriptionTaskExecutor = std::sync::Arc<dyn sp_core::traits::SpawnNamed>;
 
 /// A notification when new block is received.
-#[allow(dead_code)] // Used in subscription code path
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BlockNotification {
     pub hash: B256,
@@ -26,13 +25,13 @@ pub struct BlockNotification {
 }
 
 /// The main ETH adapter struct responsible for handling all the ETH RPC methods and converting them to Substrate calls.
+#[derive(Clone)]
 pub struct EthAdapter {
     /// The Substrate light client
     client: SubLightClient,
     /// Accounts managed by this ETH adapter
     accounts: Vec<Address>,
     /// Subscription task executor (used in EthPubSubApiServer implementation)
-    #[allow(dead_code)]
     executor: SubscriptionTaskExecutor,
 }
 

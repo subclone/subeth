@@ -464,7 +464,6 @@ impl SubLightClient {
     /// Subscribe new blocks
     ///
     /// the extracted block and ethereum transactions
-    #[allow(dead_code)] // Called from handle_accepted_subscription
     async fn subscribe_new_blocks(
         &self,
         subscription_kind: SubscriptionKind,
@@ -491,7 +490,6 @@ impl SubLightClient {
 /// Handle accepted subscription
 ///
 /// Pipes the block stream to the subscription sink
-#[allow(dead_code)] // Called from server.rs EthPubSubApiServer implementation
 pub async fn handle_accepted_subscription(
     client: SubLightClient,
     kind: SubscriptionKind,

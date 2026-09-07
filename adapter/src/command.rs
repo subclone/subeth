@@ -5,7 +5,7 @@ use std::sync::Arc;
 use jsonrpsee::RpcModule;
 use sc_service::config::RpcConfiguration;
 
-use crate::{sub_client::SubLightClient, traits::EthApiServer};
+use crate::{sub_client::SubLightClient, traits::{EthApiServer, EthPubSubApiServer}};
 
 const DEFAULT_URL: &str = "wss://rpc.ibp.network/polkadot";
 
@@ -81,12 +81,14 @@ pub async fn run(opts: Opts) -> anyhow::Result<()> {
     let mut task_manager = sc_service::TaskManager::new(tokio_handle.clone(), None)?;
 
     let mut gen_rpc_module = RpcModule::new(());
-    let rpc_module =
-        crate::server::EthAdapter::new(client, vec![], Arc::new(task_manager.spawn_handle()))
-            .into_rpc();
+    let adapter =
+        crate::server::EthAdapter::new(client, vec![], Arc::new(task_manager.spawn_handle()));
 
     gen_rpc_module
-        .merge(rpc_module)
+        .merge(EthPubSubApiServer::into_rpc(adapter.clone()))
+        .map_err(|e| anyhow::anyhow!(e))?;
+    gen_rpc_module
+        .merge(EthApiServer::into_rpc(adapter))
         .map_err(|e| anyhow::anyhow!(e))?;
 
     let rpc_port = opts.rpc_params.rpc_port.unwrap_or(8545);
