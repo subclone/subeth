@@ -79,16 +79,31 @@ impl From<subxt::Error> for SubEthError {
     }
 }
 
+/// JSON-RPC internal error (EIP-1474)
+pub const INTERNAL_ERROR_CODE: i32 = -32603;
+/// JSON-RPC "method not supported" error (EIP-1474)
+pub const METHOD_NOT_SUPPORTED_CODE: i32 = -32004;
+
 impl From<SubEthError> for ErrorObject<'_> {
     fn from(error: SubEthError) -> Self {
         match error {
-            SubEthError::RequestFailed(msg) => ErrorObject::owned(500, msg, None::<()>),
-            SubEthError::ResponseFailed => ErrorObject::owned(500, "Response failed", None::<()>),
-            SubEthError::SerdeError(msg) => ErrorObject::owned(500, msg, None::<()>),
-            SubEthError::AdapterError { message } => {
-                ErrorObject::owned(500, "Adapter error", Some(message))
+            SubEthError::RequestFailed(msg) => {
+                ErrorObject::owned(INTERNAL_ERROR_CODE, msg, None::<()>)
             }
-            SubEthError::Unsupported => ErrorObject::owned(500, "Unsupported", None::<()>),
+            SubEthError::ResponseFailed => {
+                ErrorObject::owned(INTERNAL_ERROR_CODE, "Response failed", None::<()>)
+            }
+            SubEthError::SerdeError(msg) => {
+                ErrorObject::owned(INTERNAL_ERROR_CODE, msg, None::<()>)
+            }
+            SubEthError::AdapterError { message } => {
+                ErrorObject::owned(INTERNAL_ERROR_CODE, "Adapter error", Some(message))
+            }
+            SubEthError::Unsupported => ErrorObject::owned(
+                METHOD_NOT_SUPPORTED_CODE,
+                "Method not supported",
+                None::<()>,
+            ),
         }
     }
 }
