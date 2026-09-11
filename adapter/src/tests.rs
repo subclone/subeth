@@ -44,7 +44,11 @@ fn get_subeth_debug_path() -> PathBuf {
     debug_dir_path // Return the full path
 }
 
-async fn spawn_client(use_light_client: bool, url: Option<&str>, port: u16) -> Result<tokio::process::Child> {
+async fn spawn_client(
+    use_light_client: bool,
+    url: Option<&str>,
+    port: u16,
+) -> Result<tokio::process::Child> {
     let binary_path = get_subeth_debug_path();
 
     if !std::path::Path::new(&binary_path).exists() {

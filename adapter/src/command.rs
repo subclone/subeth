@@ -5,7 +5,10 @@ use std::sync::Arc;
 use jsonrpsee::RpcModule;
 use sc_service::config::RpcConfiguration;
 
-use crate::{sub_client::SubLightClient, traits::{EthApiServer, EthPubSubApiServer}};
+use crate::{
+    sub_client::SubLightClient,
+    traits::{EthApiServer, EthPubSubApiServer},
+};
 
 const DEFAULT_URL: &str = "wss://rpc.ibp.network/polkadot";
 

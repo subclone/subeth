@@ -350,11 +350,12 @@ impl EthApiServer for EthAdapter {
         let gas_limit = request.gas.unwrap_or(21000);
 
         // Get gas price
-        let max_fee_per_gas = alloy_u256_to_sp_u256(
-            alloy_primitives::U256::from(request.max_fee_per_gas.unwrap_or(1_000_000))
-        );
-        let max_priority_fee_per_gas =
-            alloy_u256_to_sp_u256(alloy_primitives::U256::from(request.max_priority_fee_per_gas.unwrap_or(0)));
+        let max_fee_per_gas = alloy_u256_to_sp_u256(alloy_primitives::U256::from(
+            request.max_fee_per_gas.unwrap_or(1_000_000),
+        ));
+        let max_priority_fee_per_gas = alloy_u256_to_sp_u256(alloy_primitives::U256::from(
+            request.max_priority_fee_per_gas.unwrap_or(0),
+        ));
 
         // Construct EthereumTransaction
         // Note: For now, signature fields are dummy values since we're using a signed extrinsic
@@ -392,8 +393,8 @@ impl EthApiServer for EthAdapter {
 
     /// Sends signed transaction, returning its hash.
     async fn send_raw_transaction(&self, bytes: Bytes) -> RpcResult<B256> {
-        use subeth_primitives::EthereumTransaction;
         use parity_scale_codec::Decode;
+        use subeth_primitives::EthereumTransaction;
 
         // Decode the raw transaction
         let eth_tx = EthereumTransaction::decode(&mut bytes.as_ref()).map_err(|e| {

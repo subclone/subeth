@@ -420,43 +420,58 @@ impl SubLightClient {
         }
 
         // Build access_list as Value
-        let access_list_value: Vec<Value> = transaction.access_list.iter().map(|(addr, keys)| {
-            let keys_values: Vec<Value> = keys.iter().map(h256_to_value).collect();
-            Value::unnamed_composite(vec![
-                h160_to_value(addr),
-                Value::unnamed_composite(keys_values),
-            ])
-        }).collect();
+        let access_list_value: Vec<Value> = transaction
+            .access_list
+            .iter()
+            .map(|(addr, keys)| {
+                let keys_values: Vec<Value> = keys.iter().map(h256_to_value).collect();
+                Value::unnamed_composite(vec![
+                    h160_to_value(addr),
+                    Value::unnamed_composite(keys_values),
+                ])
+            })
+            .collect();
 
         // Build the EthereumTransaction as a composite Value
-        let u256_values_priority: Vec<Value> = transaction.max_priority_fee_per_gas.0.iter().map(|&w| Value::u128(w as u128)).collect();
-        let u256_values_max_fee: Vec<Value> = transaction.max_fee_per_gas.0.iter().map(|&w| Value::u128(w as u128)).collect();
-        let u256_values_value: Vec<Value> = transaction.value.0.iter().map(|&w| Value::u128(w as u128)).collect();
+        let u256_values_priority: Vec<Value> = transaction
+            .max_priority_fee_per_gas
+            .0
+            .iter()
+            .map(|&w| Value::u128(w as u128))
+            .collect();
+        let u256_values_max_fee: Vec<Value> = transaction
+            .max_fee_per_gas
+            .0
+            .iter()
+            .map(|&w| Value::u128(w as u128))
+            .collect();
+        let u256_values_value: Vec<Value> = transaction
+            .value
+            .0
+            .iter()
+            .map(|&w| Value::u128(w as u128))
+            .collect();
 
         let tx_value = Value::unnamed_composite(vec![
-            Value::u128(transaction.chain_id as u128),           // chain_id: u64
-            Value::u128(transaction.nonce as u128),              // nonce: u64
-            Value::unnamed_composite(u256_values_priority),      // max_priority_fee_per_gas: U256
-            Value::unnamed_composite(u256_values_max_fee),       // max_fee_per_gas: U256
-            Value::u128(transaction.gas_limit as u128),          // gas_limit: u64
-            h160_to_value(&transaction.to),                      // to: H160
-            Value::unnamed_composite(u256_values_value),         // value: U256
-            Value::from_bytes(&transaction.data),                // data: Vec<u8>
-            Value::unnamed_composite(access_list_value),         // access_list: Vec<(H160, Vec<H256>)>
-            Value::u128(transaction.v as u128),                  // v: u64
-            h256_to_value(&transaction.r),                       // r: H256
-            h256_to_value(&transaction.s),                       // s: H256
+            Value::u128(transaction.chain_id as u128), // chain_id: u64
+            Value::u128(transaction.nonce as u128),    // nonce: u64
+            Value::unnamed_composite(u256_values_priority), // max_priority_fee_per_gas: U256
+            Value::unnamed_composite(u256_values_max_fee), // max_fee_per_gas: U256
+            Value::u128(transaction.gas_limit as u128), // gas_limit: u64
+            h160_to_value(&transaction.to),            // to: H160
+            Value::unnamed_composite(u256_values_value), // value: U256
+            Value::from_bytes(&transaction.data),      // data: Vec<u8>
+            Value::unnamed_composite(access_list_value), // access_list: Vec<(H160, Vec<H256>)>
+            Value::u128(transaction.v as u128),        // v: u64
+            h256_to_value(&transaction.r),             // r: H256
+            h256_to_value(&transaction.s),             // s: H256
         ]);
 
         // Build the call dynamically: evm_adapter::transact(transaction)
         let call = subxt::dynamic::tx("EvmAdapter", "transact", vec![tx_value]);
 
         // Sign and submit
-        let tx_hash = self
-            .api
-            .tx()
-            .sign_and_submit_default(&call, &alice)
-            .await?;
+        let tx_hash = self.api.tx().sign_and_submit_default(&call, &alice).await?;
 
         Ok(alloy_primitives::B256::from_slice(tx_hash.0.as_slice()))
     }
