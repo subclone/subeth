@@ -14,6 +14,7 @@ use jsonrpsee::{
 };
 use sub_client::handle_accepted_subscription;
 use traits::{EthApiServer, EthPubSubApiServer};
+use types::SubEthError;
 
 pub type SubscriptionTaskExecutor = std::sync::Arc<dyn sp_core::traits::SpawnNamed>;
 
@@ -70,7 +71,7 @@ impl EthApiServer for EthAdapter {
 
     /// Returns block author.
     fn author(&self) -> RpcResult<Address> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     /// Returns accounts list.
@@ -115,7 +116,7 @@ impl EthApiServer for EthAdapter {
 
     /// Returns the number of transactions in a block with given hash.
     async fn block_transaction_count_by_hash(&self, _hash: B256) -> RpcResult<Option<U256>> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     /// Returns the number of transactions in a block with given block number.
@@ -123,17 +124,17 @@ impl EthApiServer for EthAdapter {
         &self,
         _number: BlockNumberOrTag,
     ) -> RpcResult<Option<U256>> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     /// Returns the number of uncles in a block with given hash.
     fn block_uncles_count_by_hash(&self, _hash: B256) -> RpcResult<U256> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     /// Returns the number of uncles in a block with given block number.
     fn block_uncles_count_by_number(&self, _number: u64) -> RpcResult<U256> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     /// Returns an uncles at given block and index.
@@ -142,7 +143,7 @@ impl EthApiServer for EthAdapter {
         _hash: B256,
         _index: Index,
     ) -> RpcResult<Option<EthBlock>> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     /// Returns an uncles at given block and index.
@@ -151,7 +152,7 @@ impl EthApiServer for EthAdapter {
         _number: u64,
         _index: Index,
     ) -> RpcResult<Option<EthBlock>> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     // ########################################################################
@@ -160,7 +161,7 @@ impl EthApiServer for EthAdapter {
 
     /// Get transaction by its hash.
     async fn transaction_by_hash(&self, _hash: B256) -> RpcResult<Option<Transaction>> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     /// Returns transaction by given block number and index.
@@ -169,7 +170,7 @@ impl EthApiServer for EthAdapter {
         _hash: B256,
         _index: Index,
     ) -> RpcResult<Option<Transaction>> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     /// Returns transaction by given block number and index.
@@ -188,7 +189,7 @@ impl EthApiServer for EthAdapter {
 
     /// Returns transaction receipt by transaction hash.
     async fn transaction_receipt(&self, _hash: B256) -> RpcResult<Option<Receipt>> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     // ########################################################################
@@ -264,7 +265,7 @@ impl EthApiServer for EthAdapter {
         _block_number: Option<BlockId>,
         _state_override: Option<StateOverride>,
     ) -> RpcResult<U256> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     // ########################################################################
@@ -284,13 +285,13 @@ impl EthApiServer for EthAdapter {
         _newest_block: U256,
         _reward_percentiles: Option<Vec<f64>>,
     ) -> RpcResult<FeeHistory> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     /// Introduced in EIP-1159, a Geth-specific and simplified priority fee oracle.
     /// Leverages the already existing fee history cache.
     fn max_priority_fee_per_gas(&self) -> RpcResult<U256> {
-        unimplemented!()
+        Err(SubEthError::Unsupported.into())
     }
 
     // ########################################################################
