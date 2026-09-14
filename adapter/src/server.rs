@@ -128,13 +128,15 @@ impl EthApiServer for EthAdapter {
     }
 
     /// Returns the number of uncles in a block with given hash.
+    ///
+    /// Substrate chains have no uncles, so this is always zero.
     fn block_uncles_count_by_hash(&self, _hash: B256) -> RpcResult<U256> {
-        Err(SubEthError::Unsupported.into())
+        Ok(U256::ZERO)
     }
 
     /// Returns the number of uncles in a block with given block number.
     fn block_uncles_count_by_number(&self, _number: u64) -> RpcResult<U256> {
-        Err(SubEthError::Unsupported.into())
+        Ok(U256::ZERO)
     }
 
     /// Returns an uncles at given block and index.
@@ -143,7 +145,7 @@ impl EthApiServer for EthAdapter {
         _hash: B256,
         _index: Index,
     ) -> RpcResult<Option<EthBlock>> {
-        Err(SubEthError::Unsupported.into())
+        Ok(None)
     }
 
     /// Returns an uncles at given block and index.
@@ -152,7 +154,7 @@ impl EthApiServer for EthAdapter {
         _number: u64,
         _index: Index,
     ) -> RpcResult<Option<EthBlock>> {
-        Err(SubEthError::Unsupported.into())
+        Ok(None)
     }
 
     // ########################################################################
