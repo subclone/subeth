@@ -16,6 +16,9 @@ use sub_client::handle_accepted_subscription;
 use traits::{EthApiServer, EthPubSubApiServer};
 use types::SubEthError;
 
+/// Fixed gas price reported to clients; Substrate fees are not gas-based.
+const DEFAULT_GAS_PRICE: u128 = 1_000_000;
+
 pub type SubscriptionTaskExecutor = std::sync::Arc<dyn sp_core::traits::SpawnNamed>;
 
 /// A notification when new block is received.
@@ -276,8 +279,7 @@ impl EthApiServer for EthAdapter {
 
     /// Returns current gas_price.
     fn gas_price(&self) -> RpcResult<U256> {
-        // TODO: fix this
-        Ok(U256::from(1_000_000))
+        Ok(U256::from(DEFAULT_GAS_PRICE))
     }
 
     /// Introduced in EIP-1159 for getting information on the appropriate priority fee to use.
@@ -291,9 +293,10 @@ impl EthApiServer for EthAdapter {
     }
 
     /// Introduced in EIP-1159, a Geth-specific and simplified priority fee oracle.
-    /// Leverages the already existing fee history cache.
+    ///
+    /// There is no tip market behind the adapter, so the suggested tip is zero.
     fn max_priority_fee_per_gas(&self) -> RpcResult<U256> {
-        Err(SubEthError::Unsupported.into())
+        Ok(U256::ZERO)
     }
 
     // ########################################################################
@@ -354,7 +357,7 @@ impl EthApiServer for EthAdapter {
 
         // Get gas price
         let max_fee_per_gas = alloy_u256_to_sp_u256(alloy_primitives::U256::from(
-            request.max_fee_per_gas.unwrap_or(1_000_000),
+            request.max_fee_per_gas.unwrap_or(DEFAULT_GAS_PRICE),
         ));
         let max_priority_fee_per_gas = alloy_u256_to_sp_u256(alloy_primitives::U256::from(
             request.max_priority_fee_per_gas.unwrap_or(0),
