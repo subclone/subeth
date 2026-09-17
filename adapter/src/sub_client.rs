@@ -122,50 +122,47 @@ impl SubLightClient {
         Ok(latest_block.number().into())
     }
 
-    /// Get current block
+    /// Resolve a block number or tag to a block hash.
+    ///
+    /// Substrate has no pending block and the client follows finalized blocks, so `latest`,
+    /// `pending`, `safe` and `finalized` all resolve to the latest finalized block.
+    pub async fn resolve_block_hash(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> Result<Option<H256>, SubEthError> {
+        let number = match block {
+            BlockNumberOrTag::Number(n) => n,
+            BlockNumberOrTag::Earliest => 0,
+            BlockNumberOrTag::Latest
+            | BlockNumberOrTag::Pending
+            | BlockNumberOrTag::Safe
+            | BlockNumberOrTag::Finalized => {
+                return Ok(Some(self.api.blocks().at_latest().await?.hash()));
+            }
+        };
+
+        if let Some(hash) = self.cache.get_hash_by_number(number) {
+            return Ok(Some(hash));
+        }
+
+        let hash = self
+            .rpc_client
+            .request::<Option<H256>>("chain_getBlockHash", rpc_params![number])
+            .await?;
+        if let Some(hash) = hash {
+            self.cache.insert_number_to_hash(number, hash);
+        }
+        Ok(hash)
+    }
+
+    /// Get block by number or tag
     pub async fn get_block_by_number(
         &self,
         block_number: BlockNumberOrTag,
     ) -> Result<Option<EthBlock>, SubEthError> {
-        let substrate_block = match block_number {
-            BlockNumberOrTag::Latest => {
-                let current_block_number = self.block_number().await?;
-                if let Some(block) = self.cache.get_by_number(current_block_number) {
-                    return Ok(Some(block));
-                }
-
-                Some(self.api.blocks().at_latest().await?)
-            }
-            BlockNumberOrTag::Number(n) => {
-                let block_hash = if let Some(hash) = self.cache.get_hash_by_number(n) {
-                    Some(hash)
-                } else {
-                    self.rpc_client
-                        .request::<Option<H256>>("chain_getBlockHash", rpc_params![n])
-                        .await?
-                };
-
-                if let Some(hash) = block_hash {
-                    self.cache.insert_number_to_hash(n, hash);
-
-                    if let Some(block) = self.cache.get_by_hash(&hash) {
-                        return Ok(Some(block));
-                    }
-
-                    Some(self.api.blocks().at(hash).await?)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
-
-        if let Some(block) = substrate_block {
-            let eth_block = convert_block(block, self.properties.decimals).await?;
-            self.cache.insert_block(eth_block.clone());
-            Ok(Some(eth_block))
-        } else {
-            Ok(None)
+        match self.resolve_block_hash(block_number).await? {
+            Some(hash) => self.get_block_by_hash(hash).await.map(Some),
+            None => Ok(None),
         }
     }
 
