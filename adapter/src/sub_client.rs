@@ -267,61 +267,31 @@ impl SubLightClient {
         unimplemented!("Use `get_transaction_by_block_and_index` instead")
     }
 
+    /// Get a transaction by block number (or tag) and its index in the block
     pub async fn get_transaction_by_block_and_index(
         &self,
         block: BlockNumberOrTag,
         tx_index: Index,
     ) -> Result<Option<EthTransaction>, SubEthError> {
-        let number = match block {
-            BlockNumberOrTag::Latest => self.block_number().await?,
-            BlockNumberOrTag::Number(n) => n,
-            _ => {
-                return Ok(None);
-            }
-        };
-
-        if let Some(eth_block) = self.cache.get_by_number(number) {
-            if let Some(tx) = eth_block
-                .transactions
-                .txns()
-                .find(|tx| tx.transaction_index == Some(tx_index.0 as u64))
-            {
-                return Ok(Some(tx.clone()));
-            }
+        match self.resolve_block_hash(block).await? {
+            Some(hash) => self.get_transaction_by_block_hash_and_index(hash, tx_index).await,
+            None => Ok(None),
         }
+    }
 
-        let block_hash = if let Some(hash) = self.cache.get_hash_by_number(number) {
-            Some(hash)
-        } else {
-            self.rpc_client
-                .request::<Option<H256>>("chain_getBlockHash", rpc_params![number])
-                .await?
-        };
-
-        let block_hash = match block_hash {
-            Some(hash) => hash,
-            None => return Ok(None),
-        };
-
-        let block = self.api.blocks().at(block_hash).await?;
-
-        let ext = block
-            .extrinsics()
-            .await?
-            .iter()
-            .find(|ext| ext.index() as usize == tx_index.0);
-
-        if let Some(ext) = ext {
-            let transaction = convert_extrinsic(
-                (block.number().into(), block_hash.0),
-                ext,
-                self.properties.decimals,
-            )
-            .await?;
-            Ok(Some(transaction))
-        } else {
-            Ok(None)
-        }
+    /// Get a transaction by block hash and its index in the block
+    pub async fn get_transaction_by_block_hash_and_index(
+        &self,
+        block_hash: H256,
+        tx_index: Index,
+    ) -> Result<Option<EthTransaction>, SubEthError> {
+        let block = self.get_block_by_hash(block_hash).await?;
+        let tx = block
+            .transactions
+            .txns()
+            .find(|tx| tx.transaction_index == Some(tx_index.0 as u64))
+            .cloned();
+        Ok(tx)
     }
 
     pub async fn _get_transaction_receipt(

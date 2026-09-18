@@ -169,13 +169,18 @@ impl EthApiServer for EthAdapter {
         Err(SubEthError::Unsupported.into())
     }
 
-    /// Returns transaction by given block number and index.
+    /// Returns transaction by given block hash and index.
     async fn transaction_by_block_hash_and_index(
         &self,
-        _hash: B256,
-        _index: Index,
+        hash: B256,
+        index: Index,
     ) -> RpcResult<Option<Transaction>> {
-        Err(SubEthError::Unsupported.into())
+        let tx = self
+            .client
+            .get_transaction_by_block_hash_and_index(hash.0.into(), index)
+            .await?;
+
+        Ok(tx)
     }
 
     /// Returns transaction by given block number and index.

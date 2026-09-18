@@ -78,6 +78,7 @@ impl BlockCache {
     }
 
     /// Get a block by number
+    #[cfg(test)]
     pub fn get_by_number(&self, number: u64) -> Option<EthBlock> {
         if let Ok(inner) = self.inner.read() {
             inner
