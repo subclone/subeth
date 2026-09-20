@@ -118,16 +118,20 @@ impl EthApiServer for EthAdapter {
     }
 
     /// Returns the number of transactions in a block with given hash.
-    async fn block_transaction_count_by_hash(&self, _hash: B256) -> RpcResult<Option<U256>> {
-        Err(SubEthError::Unsupported.into())
+    async fn block_transaction_count_by_hash(&self, hash: B256) -> RpcResult<Option<U256>> {
+        let block = self.client.get_block_by_hash(hash.0.into()).await?;
+
+        Ok(Some(U256::from(block.transactions.len())))
     }
 
     /// Returns the number of transactions in a block with given block number.
     async fn block_transaction_count_by_number(
         &self,
-        _number: BlockNumberOrTag,
+        number: BlockNumberOrTag,
     ) -> RpcResult<Option<U256>> {
-        Err(SubEthError::Unsupported.into())
+        let block = self.client.get_block_by_number(number).await?;
+
+        Ok(block.map(|b| U256::from(b.transactions.len())))
     }
 
     /// Returns the number of uncles in a block with given hash.
