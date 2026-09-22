@@ -54,6 +54,14 @@ impl EthAdapter {
     }
 }
 
+/// Strip transaction bodies down to hashes unless the caller asked for full transactions.
+fn with_full_transactions(mut block: EthBlock, full: bool) -> EthBlock {
+    if !full {
+        block.transactions.convert_to_hashes();
+    }
+    block
+}
+
 /// Implement the ETH API server
 #[async_trait]
 impl EthApiServer for EthAdapter {
@@ -100,21 +108,21 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     /// Returns block with given hash.
-    async fn block_by_hash(&self, hash: B256, _full: bool) -> RpcResult<Option<EthBlock>> {
+    async fn block_by_hash(&self, hash: B256, full: bool) -> RpcResult<Option<EthBlock>> {
         let block = self.client.get_block_by_hash(hash.0.into()).await?;
 
-        Ok(Some(block))
+        Ok(Some(with_full_transactions(block, full)))
     }
 
     /// Returns block with given number.
     async fn block_by_number(
         &self,
         number: BlockNumberOrTag,
-        _full: bool,
+        full: bool,
     ) -> RpcResult<Option<EthBlock>> {
         let block = self.client.get_block_by_number(number).await?;
 
-        Ok(block)
+        Ok(block.map(|b| with_full_transactions(b, full)))
     }
 
     /// Returns the number of transactions in a block with given hash.
