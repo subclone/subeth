@@ -10,7 +10,7 @@ use alloy_consensus::{Signed, TxEip1559};
 use alloy_primitives::{Address, ChainId, PrimitiveSignature, TxKind, B256, U256};
 use alloy_rpc_types_eth::pubsub::SubscriptionKind;
 use alloy_rpc_types_eth::{
-    Block as EthBlock, BlockNumberOrTag, Header as EthHeader, Index, SyncStatus,
+    Block as EthBlock, BlockId, BlockNumberOrTag, Header as EthHeader, Index, SyncStatus,
     TransactionReceipt, TransactionRequest,
 };
 use frame_support::StorageHasher;
@@ -20,6 +20,7 @@ use subxt::backend::rpc::RpcClient;
 use subxt::blocks::ExtrinsicDetails;
 use subxt::metadata::types::StorageEntryType;
 use subxt::rpc_params;
+use subxt::storage::Storage;
 use subxt::utils::{AccountId32, MultiAddress, H256};
 use subxt::{lightclient::LightClient, OnlineClient};
 
@@ -177,17 +178,31 @@ impl SubLightClient {
         Ok(eth_block)
     }
 
+    /// Storage view at the given block, defaulting to the latest block
+    async fn storage_at_block(
+        &self,
+        block: Option<BlockId>,
+    ) -> Result<Storage<ChainConfig, OnlineClient<ChainConfig>>, SubEthError> {
+        let hash = match block {
+            None => return Ok(self.api.storage().at_latest().await?),
+            Some(BlockId::Hash(hash)) => H256(hash.block_hash.0),
+            Some(BlockId::Number(number)) => self
+                .resolve_block_hash(number)
+                .await?
+                .ok_or(SubEthError::RequestFailed("Unknown block"))?,
+        };
+        Ok(self.api.storage().at(hash))
+    }
+
     /// Get balance of an address
-    pub async fn get_balance(&self, address: Address) -> Result<U256, SubEthError> {
+    pub async fn get_balance(
+        &self,
+        address: Address,
+        block: Option<BlockId>,
+    ) -> Result<U256, SubEthError> {
         let account_id = AddressMapping::to_ss58(address);
         let query = storage().system().account(&account_id);
-        let current_block_hash = self.cache.get_hash_by_number(self.block_number().await?);
-
-        let account = if let Some(hash) = current_block_hash {
-            self.api.storage().at(hash).fetch(&query).await?
-        } else {
-            self.api.storage().at_latest().await?.fetch(&query).await?
-        };
+        let account = self.storage_at_block(block).await?.fetch(&query).await?;
 
         if let Some(account_info) = account {
             Ok(U256::from(account_info.data.free))
@@ -197,10 +212,14 @@ impl SubLightClient {
     }
 
     /// Get transaction count
-    pub async fn get_transaction_count(&self, address: Address) -> Result<U256, SubEthError> {
+    pub async fn get_transaction_count(
+        &self,
+        address: Address,
+        block: Option<BlockId>,
+    ) -> Result<U256, SubEthError> {
         let account_id = AddressMapping::to_ss58(address);
         let query = storage().system().account(&account_id);
-        let account = self.api.storage().at_latest().await?.fetch(&query).await?;
+        let account = self.storage_at_block(block).await?.fetch(&query).await?;
 
         if let Some(account_info) = account {
             Ok(U256::from(account_info.nonce))
@@ -274,7 +293,10 @@ impl SubLightClient {
         tx_index: Index,
     ) -> Result<Option<EthTransaction>, SubEthError> {
         match self.resolve_block_hash(block).await? {
-            Some(hash) => self.get_transaction_by_block_hash_and_index(hash, tx_index).await,
+            Some(hash) => {
+                self.get_transaction_by_block_hash_and_index(hash, tx_index)
+                    .await
+            }
             None => Ok(None),
         }
     }

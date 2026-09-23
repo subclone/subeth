@@ -219,8 +219,8 @@ impl EthApiServer for EthAdapter {
     // ########################################################################
 
     /// Returns balance of the given account.
-    async fn balance(&self, address: Address, _number_or_tag: Option<BlockId>) -> RpcResult<U256> {
-        let balance = self.client.get_balance(address).await?;
+    async fn balance(&self, address: Address, number_or_tag: Option<BlockId>) -> RpcResult<U256> {
+        let balance = self.client.get_balance(address, number_or_tag).await?;
 
         Ok(balance)
     }
@@ -241,9 +241,12 @@ impl EthApiServer for EthAdapter {
     async fn transaction_count(
         &self,
         address: Address,
-        _number_or_tag: Option<BlockNumberOrTag>,
+        number_or_tag: Option<BlockNumberOrTag>,
     ) -> RpcResult<U256> {
-        let count = self.client.get_transaction_count(address).await?;
+        let count = self
+            .client
+            .get_transaction_count(address, number_or_tag.map(BlockId::Number))
+            .await?;
 
         Ok(count)
     }
