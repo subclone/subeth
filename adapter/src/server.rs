@@ -230,9 +230,12 @@ impl EthApiServer for EthAdapter {
         &self,
         address: Address,
         key: B256,
-        _number_or_tag: Option<BlockId>,
+        number_or_tag: Option<BlockId>,
     ) -> RpcResult<Vec<u8>> {
-        let storage = self.client.get_storage_at(address, key.0.into()).await?;
+        let storage = self
+            .client
+            .get_storage_at(address, key.0.into(), number_or_tag)
+            .await?;
 
         Ok(storage)
     }
@@ -270,11 +273,11 @@ impl EthApiServer for EthAdapter {
     async fn call(
         &self,
         request: TransactionRequest,
-        _block_number: Option<BlockId>,
+        block_number: Option<BlockId>,
         _state_overrides: Option<StateOverride>,
         _block_overrides: Option<Box<BlockOverrides>>,
     ) -> RpcResult<Bytes> {
-        let res = self.client.call(request).await?;
+        let res = self.client.call(request, block_number).await?;
 
         if let Some(output) = res {
             Ok(output.into())

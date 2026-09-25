@@ -250,11 +250,10 @@ impl SubLightClient {
         &self,
         _address: Address,
         key: H256,
+        block: Option<BlockId>,
     ) -> Result<Vec<u8>, SubEthError> {
         let storage_value = self
-            .api
-            .storage()
-            .at_latest()
+            .storage_at_block(block)
             .await?
             .fetch_raw(key.as_bytes())
             .await?
@@ -324,7 +323,11 @@ impl SubLightClient {
     }
 
     /// Read the storage of a pallet
-    pub async fn call(&self, request: TransactionRequest) -> Result<Option<Vec<u8>>, SubEthError> {
+    pub async fn call(
+        &self,
+        request: TransactionRequest,
+        block: Option<BlockId>,
+    ) -> Result<Option<Vec<u8>>, SubEthError> {
         let dest = match request.to {
             Some(TxKind::Call(dest)) => dest,
             _ => return Ok(None),
@@ -373,9 +376,7 @@ impl SubLightClient {
         }
 
         let value = self
-            .api
-            .storage()
-            .at_latest()
+            .storage_at_block(block)
             .await?
             .fetch_raw(final_key)
             .await?;
