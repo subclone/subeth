@@ -170,8 +170,8 @@ async fn test_base_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Resu
 
     // println!("Balance: {:?}", balance);
     // eth_getStorageAt
-    let storage: Vec<u8> = ws_client
-        .request::<Vec<u8>, ArrayParams>(
+    let storage: Bytes = ws_client
+        .request::<Bytes, ArrayParams>(
             "eth_getStorageAt",
             rpc_params![
                 "0x62616c616e636573000000000000000000000000", // "balances" pallet
@@ -180,7 +180,8 @@ async fn test_base_rpc_calls(ws_client: &jsonrpsee::ws_client::WsClient) -> Resu
             ],
         )
         .await?;
-    assert!(!storage.is_empty() || storage.is_empty()); // Just check it returns
+    // No value lives under the all-zero key, so the result must be empty hex ("0x")
+    assert!(storage.is_empty());
 
     println!("Storage: {:?}", storage);
     // eth_getTransactionCount

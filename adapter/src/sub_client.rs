@@ -240,12 +240,10 @@ impl SubLightClient {
         Ok(vec![])
     }
 
-    /// Get storage at a given address
+    /// Get raw storage value for the given key
     ///
-    /// This could be used to read the pallet's storage, however, `eth_call` is more flexible,
-    /// so that's preferred for now
-    ///
-    /// Due to the nature of Substrate's storage, this function is not implemented
+    /// The address is ignored: `key` is treated as a full Substrate storage key. `eth_call` is
+    /// more flexible for reading pallet storage, so that's preferred.
     pub async fn get_storage_at(
         &self,
         _address: Address,

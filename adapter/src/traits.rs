@@ -130,7 +130,7 @@ pub trait EthApi {
         address: Address,
         index: B256,
         number_or_tag: Option<BlockId>,
-    ) -> RpcResult<Vec<u8>>;
+    ) -> RpcResult<Bytes>;
 
     /// Returns the number of transactions sent from given address at given time (block number).
     #[method(name = "eth_getTransactionCount")]

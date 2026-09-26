@@ -231,13 +231,13 @@ impl EthApiServer for EthAdapter {
         address: Address,
         key: B256,
         number_or_tag: Option<BlockId>,
-    ) -> RpcResult<Vec<u8>> {
+    ) -> RpcResult<Bytes> {
         let storage = self
             .client
             .get_storage_at(address, key.0.into(), number_or_tag)
             .await?;
 
-        Ok(storage)
+        Ok(storage.into())
     }
 
     /// Returns the number of transactions sent from given address at given time (block number).
