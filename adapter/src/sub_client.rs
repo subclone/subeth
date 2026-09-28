@@ -7,11 +7,11 @@ use crate::cache::BlockCache;
 use crate::server::BlockNotification;
 use crate::types::*;
 use alloy_consensus::{Signed, TxEip1559};
-use alloy_primitives::{Address, ChainId, PrimitiveSignature, TxKind, B256, U256};
+use alloy_primitives::{Address, ChainId, PrimitiveSignature, TxKind, U256};
 use alloy_rpc_types_eth::pubsub::SubscriptionKind;
 use alloy_rpc_types_eth::{
     Block as EthBlock, BlockId, BlockNumberOrTag, Header as EthHeader, Index, SyncStatus,
-    TransactionReceipt, TransactionRequest,
+    TransactionRequest,
 };
 use frame_support::StorageHasher;
 use futures::{Stream, StreamExt};
@@ -94,12 +94,6 @@ impl SubLightClient {
         cache_blocks: Option<usize>,
     ) -> anyhow::Result<Self> {
         let rpc = RpcClient::from_url(url).await?;
-        // Try to use insecure url if available to skip validation, otherwise fall back to rpc client
-        // Note: subxt 0.40 might not have from_insecure_url, so we might need to check.
-        // For now, let's try to use from_url which usually validates.
-        // If we want to skip validation, we might need a different approach if builder is missing.
-        // Let's assume from_url works for now, but we really want to skip validation.
-        // If from_insecure_url exists, use it.
         let api = OnlineClient::<ChainConfig>::from_url(url).await?;
 
         Self::new(api, rpc, chain_id, cache_blocks).await
@@ -113,7 +107,6 @@ impl SubLightClient {
     }
 
     pub fn syncing(&self) -> Result<SyncStatus, SubEthError> {
-        // let status = self.rpc.system_health().await?;
         Ok(SyncStatus::None)
     }
 
@@ -260,29 +253,6 @@ impl SubLightClient {
         Ok(storage_value)
     }
 
-    // pub async fn get_storage_client(
-    //     &self,
-    //     at: BlockNumberOrTag,
-    // ) -> Result<StorageClient<ChainConfig, OnlineClient<ChainConfig>>, SubEthError> {
-    //     if let Some(at) = at.as_number() {
-    //         if let Some(hash) = self.cache.get_hash_by_number(at) {
-    //             Ok(self.api.storage().at(hash))
-    //         } else {
-    //             self.api.storage().at_latest().await.map_err(Into::into)
-    //         }
-    //     }
-    // }
-
-    /// Get transaction by hash
-    ///
-    /// Please, use `get_transaction_by_block_and_index` instead
-    pub async fn _get_transaction_by_hash(
-        &self,
-        _tx_hash: B256,
-    ) -> Result<Option<EthTransaction>, SubEthError> {
-        unimplemented!("Use `get_transaction_by_block_and_index` instead")
-    }
-
     /// Get a transaction by block number (or tag) and its index in the block
     pub async fn get_transaction_by_block_and_index(
         &self,
@@ -311,13 +281,6 @@ impl SubLightClient {
             .find(|tx| tx.transaction_index == Some(tx_index.0 as u64))
             .cloned();
         Ok(tx)
-    }
-
-    pub async fn _get_transaction_receipt(
-        &self,
-        _tx_hash: B256,
-    ) -> Result<Option<TransactionReceipt>, SubEthError> {
-        unimplemented!("Use `get_transaction_by_block_and_index` instead")
     }
 
     /// Read the storage of a pallet
@@ -613,7 +576,6 @@ async fn convert_extrinsic(
         // Inherents and unsigned extrinsics have no signer, so we use null address
         None => [0u8; 32],
     };
-    // let is_unsigned = !ext.is_signed();
 
     let from = AddressMapping::to_address(AccountId32::from(from));
 
