@@ -649,7 +649,33 @@ async fn convert_extrinsic(
     Ok(eth_tx)
 }
 
-/// Convert value from chain's native token to wei
+/// Decimals of the ETH native unit (wei per ether)
+const ETH_DECIMALS: u32 = 18;
+
+/// Convert value from chain's native token (with `decimals` decimals) to wei (18 decimals)
 fn to_wei(value: U256, decimals: u32) -> U256 {
-    value * U256::from(10).pow(U256::from(decimals))
+    let ten = U256::from(10);
+    if decimals <= ETH_DECIMALS {
+        value.saturating_mul(ten.pow(U256::from(ETH_DECIMALS - decimals)))
+    } else {
+        value / ten.pow(U256::from(decimals - ETH_DECIMALS))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_wei_rescales_to_18_decimals() {
+        // 1 DOT (10 decimals) must be worth exactly 1 ether, not 10^10 ether
+        let one_dot = U256::from(10_000_000_000u64);
+        assert_eq!(to_wei(one_dot, 10), U256::from(10).pow(U256::from(18)));
+        // A chain that already uses 18 decimals is passed through unchanged
+        assert_eq!(to_wei(U256::from(42), 18), U256::from(42));
+        // More than 18 decimals loses precision instead of inflating the value
+        assert_eq!(to_wei(U256::from(1_000), 20), U256::from(10));
+        // Huge values saturate instead of panicking on overflow
+        assert_eq!(to_wei(U256::MAX, 0), U256::MAX);
+    }
 }
