@@ -28,9 +28,34 @@ use subxt::{lightclient::LightClient, OnlineClient};
 pub struct Properties {
     /// Decimals of the token
     decimals: u32,
-    /// Symbol of the token (reserved for future use)
-    #[allow(dead_code)]
+    /// Symbol of the token
     symbol: String,
+}
+
+impl Properties {
+    /// Fallback used when the chain does not report token properties
+    const DEFAULT_DECIMALS: u32 = 10;
+    const DEFAULT_SYMBOL: &'static str = "DOT";
+
+    /// Parse the result of `system_properties`.
+    ///
+    /// `tokenDecimals`/`tokenSymbol` may be a single value or a list (multi-token chains),
+    /// in which case the first entry is the native token.
+    fn from_system_properties(props: &serde_json::Value) -> Self {
+        let first = |key: &str| match props.get(key) {
+            Some(serde_json::Value::Array(values)) => values.first().cloned(),
+            other => other.cloned(),
+        };
+        Self {
+            decimals: first("tokenDecimals")
+                .and_then(|v| v.as_u64())
+                .map(|d| d as u32)
+                .unwrap_or(Self::DEFAULT_DECIMALS),
+            symbol: first("tokenSymbol")
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_else(|| Self::DEFAULT_SYMBOL.to_string()),
+        }
+    }
 }
 
 /// Represents the Substrate light client
@@ -57,10 +82,21 @@ impl SubLightClient {
         chain_id: ChainId,
         cache_capacity: Option<usize>,
     ) -> anyhow::Result<Self> {
-        let properties = Properties {
-            decimals: 10,
-            symbol: "Dot".to_string(),
+        let properties = match rpc
+            .request::<serde_json::Value>("system_properties", rpc_params![])
+            .await
+        {
+            Ok(props) => Properties::from_system_properties(&props),
+            Err(e) => {
+                log::warn!("Failed to fetch chain properties, using defaults: {:?}", e);
+                Properties::from_system_properties(&serde_json::Value::Null)
+            }
         };
+        log::info!(
+            "Native token: {} ({} decimals)",
+            properties.symbol,
+            properties.decimals
+        );
 
         Ok(Self {
             inner: None,
@@ -665,6 +701,22 @@ fn to_wei(value: U256, decimals: u32) -> U256 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn properties_are_read_from_chain() {
+        let props = serde_json::json!({ "tokenDecimals": 12, "tokenSymbol": "UNIT" });
+        let parsed = Properties::from_system_properties(&props);
+        assert_eq!((parsed.decimals, parsed.symbol.as_str()), (12, "UNIT"));
+
+        // Multi-token chains report lists; the first entry is the native token
+        let props = serde_json::json!({ "tokenDecimals": [18, 6], "tokenSymbol": ["GLMR", "X"] });
+        let parsed = Properties::from_system_properties(&props);
+        assert_eq!((parsed.decimals, parsed.symbol.as_str()), (18, "GLMR"));
+
+        // Missing properties fall back to the defaults
+        let parsed = Properties::from_system_properties(&serde_json::Value::Null);
+        assert_eq!((parsed.decimals, parsed.symbol.as_str()), (10, "DOT"));
+    }
 
     #[test]
     fn to_wei_rescales_to_18_decimals() {
