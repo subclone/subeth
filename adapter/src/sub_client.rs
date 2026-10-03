@@ -16,6 +16,7 @@ use alloy_rpc_types_eth::{
 use frame_support::StorageHasher;
 use futures::{Stream, StreamExt};
 use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
+use parity_scale_codec::Decode;
 use subxt::backend::rpc::RpcClient;
 use subxt::blocks::ExtrinsicDetails;
 use subxt::metadata::types::StorageEntryType;
@@ -607,13 +608,11 @@ async fn convert_extrinsic(
 ) -> Result<EthTransaction, SubEthError> {
     let tx_hash = ext.hash();
     let tx_index = ext.index();
-    let from: [u8; 32] = match ext.address_bytes() {
-        Some(addr) => addr.try_into().unwrap_or_default(), // TODO: investigate why this fails sometimes
-        // Inherents and unsigned extrinsics have no signer, so we use null address
-        None => [0u8; 32],
-    };
-
-    let from = AddressMapping::to_address(AccountId32::from(from));
+    // Inherents and unsigned extrinsics have no signer, so we use null address
+    let from = ext
+        .address_bytes()
+        .and_then(signer_address)
+        .unwrap_or(Address::ZERO);
 
     let (dest, value) = {
         // TODO: handle `TransferAll` as well
@@ -685,6 +684,25 @@ async fn convert_extrinsic(
     Ok(eth_tx)
 }
 
+/// Map a Substrate `MultiAddress` to an Ethereum address, if it identifies an account
+fn multi_address_to_eth<I>(address: MultiAddress<AccountId32, I>) -> Option<Address> {
+    match address {
+        MultiAddress::Id(id) => Some(AddressMapping::to_address(id)),
+        MultiAddress::Address32(raw) => Some(AddressMapping::to_address(raw.into())),
+        MultiAddress::Address20(raw) => Some(Address::from(raw)),
+        MultiAddress::Index(_) | MultiAddress::Raw(_) => None,
+    }
+}
+
+/// Decode the signer of an extrinsic from its SCALE-encoded `MultiAddress` bytes.
+///
+/// The bytes include the enum variant prefix, so they can't be reinterpreted as a raw
+/// 32-byte account id directly.
+fn signer_address(mut bytes: &[u8]) -> Option<Address> {
+    let address = MultiAddress::<AccountId32, u32>::decode(&mut bytes).ok()?;
+    multi_address_to_eth(address)
+}
+
 /// Decimals of the ETH native unit (wei per ether)
 const ETH_DECIMALS: u32 = 18;
 
@@ -701,6 +719,25 @@ fn to_wei(value: U256, decimals: u32) -> U256 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use parity_scale_codec::Encode;
+
+    #[test]
+    fn signer_is_decoded_from_multi_address_bytes() {
+        let account = AccountId32::from([7u8; 32]);
+        let encoded = MultiAddress::<AccountId32, u32>::Id(account.clone()).encode();
+        // 1 byte variant prefix + 32 byte account id: not a plain [u8; 32]
+        assert_eq!(encoded.len(), 33);
+        assert_eq!(
+            signer_address(&encoded),
+            Some(AddressMapping::to_address(account))
+        );
+
+        let raw20 = [9u8; 20];
+        let encoded = MultiAddress::<AccountId32, u32>::Address20(raw20).encode();
+        assert_eq!(signer_address(&encoded), Some(Address::from(raw20)));
+
+        assert_eq!(signer_address(&[0xff]), None);
+    }
 
     #[test]
     fn properties_are_read_from_chain() {
