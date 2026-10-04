@@ -628,24 +628,19 @@ async fn convert_extrinsic(
             None
         };
 
-        if let Some((account_id, value)) = vals {
-            match account_id {
-                MultiAddress::Id(id) => {
-                    (AddressMapping::to_address(id.0.into()), U256::from(value))
-                }
-                MultiAddress::Address32(id) => {
-                    (AddressMapping::to_address(id.into()), U256::from(value))
-                }
-                _ => unreachable!("Unsupported account type; qed"),
+        // Transfers to account-like destinations become native value transfers. Anything
+        // else (other calls, or index/raw destinations) is a call to the pallet's "contract".
+        match vals.and_then(|(dest, value)| Some((multi_address_to_eth(dest)?, value))) {
+            Some((dest, value)) => (dest, U256::from(value)),
+            None => {
+                let pallet_name = ext.pallet_name().map_err(|_| SubEthError::AdapterError {
+                    message: "Could not fetch pallet name from extrinsic".to_string(),
+                })?;
+                (
+                    PalletContractMapping::contract_address(pallet_name),
+                    U256::ZERO,
+                )
             }
-        } else {
-            let pallet_name = ext.pallet_name().map_err(|_| SubEthError::AdapterError {
-                message: "Could not fetch pallet name from extrinsic".to_string(),
-            })?;
-            (
-                PalletContractMapping::contract_address(pallet_name),
-                U256::ZERO,
-            )
         }
     };
 
