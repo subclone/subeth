@@ -537,15 +537,14 @@ async fn convert_block(block: SubstrateBlock, decimals: u32) -> Result<EthBlock,
     let state_root = header.state_root.0;
     let txs_root = header.extrinsics_root.0;
 
-    // because eth timestamp is in seconds
+    // because eth timestamp is in seconds. Genesis (and chains without pallet-timestamp)
+    // have no `timestamp::set` inherent, so default to zero rather than panicking.
     let timestamp = block
         .extrinsics()
         .await?
         .find_first::<timestamp::calls::types::Set>()?
-        .expect("should have timestamp::set")
-        .value
-        .now
-        / 1000;
+        .map(|set| set.value.now / 1000)
+        .unwrap_or_default();
 
     let block_transactions = extract_transactions(block_hash, block, decimals).await?;
 
