@@ -365,12 +365,19 @@ impl SubLightClient {
         final_key.extend_from_slice(&pallet_prefix_hashed);
         final_key.extend_from_slice(&storage_prefix_hashed);
 
-        if let StorageEntryType::Map { hashers, .. } = entry.entry_type() {
-            for (i, hasher) in hashers.iter().enumerate() {
-                if let Some(key_raw) = storage_key.keys.get(i) {
-                    final_key.extend(hash_key(key_raw, hasher));
-                }
-            }
+        let hashers: &[_] = match entry.entry_type() {
+            StorageEntryType::Map { hashers, .. } => hashers,
+            StorageEntryType::Plain(_) => &[],
+        };
+        // A partial key would silently read nothing (or a different item), so require one
+        // key per hasher.
+        if storage_key.keys.len() != hashers.len() {
+            return Err(SubEthError::RequestFailed(
+                "Number of storage keys does not match the storage item",
+            ));
+        }
+        for (key_raw, hasher) in storage_key.keys.iter().zip(hashers) {
+            final_key.extend(hash_key(key_raw, hasher));
         }
 
         let value = self
