@@ -262,9 +262,13 @@ impl SubLightClient {
     ///
     /// In our case, (for now) it returns `revert` bytecode if the given address is a pallet's contract address
     pub fn get_code(&self, address: Address) -> Result<Vec<u8>, SubEthError> {
+        // Only addresses that name a pallet in the runtime are "contracts"; the zero address
+        // (empty name) and arbitrary EOAs must report empty code.
         if let Some(name) = PalletContractMapping::pallet_name(address) {
-            let code = format!("revert: {}", name);
-            return Ok(code.into_bytes());
+            if self.api.metadata().pallet_by_name(&name).is_some() {
+                let code = format!("revert: {}", name);
+                return Ok(code.into_bytes());
+            }
         }
 
         Ok(vec![])
