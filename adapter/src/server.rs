@@ -373,7 +373,16 @@ impl EthApiServer for EthAdapter {
             }
         };
 
-        let nonce = request.nonce.unwrap_or(0);
+        // Fill in the sender's current nonce when the caller didn't provide one
+        let nonce = match (request.nonce, request.from) {
+            (Some(nonce), _) => nonce,
+            (None, Some(from)) => self
+                .client
+                .get_transaction_count(from, None)
+                .await?
+                .saturating_to::<u64>(),
+            (None, None) => 0,
+        };
         let value = alloy_u256_to_sp_u256(request.value.unwrap_or_default());
         let data = request.input.input.map(|b| b.to_vec()).unwrap_or_default();
         let gas_limit = request.gas.unwrap_or(21000);
