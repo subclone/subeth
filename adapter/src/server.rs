@@ -468,21 +468,23 @@ impl EthPubSubApiServer for EthAdapter {
         kind: SubscriptionKind,
         params: Option<Params>,
     ) -> jsonrpsee::core::SubscriptionResult {
-        // Handle the subscription logic here
-        println!(
-            "Subscribed with kind: {:?}, params: {:?}, id: {:?}",
-            kind, params, pending
-        );
+        log::debug!("New subscription: kind={:?}, params={:?}", kind, params);
+
+        if kind != SubscriptionKind::NewHeads {
+            pending
+                .reject(jsonrpsee::types::ErrorObject::from(
+                    SubEthError::Unsupported,
+                ))
+                .await;
+            return Ok(());
+        }
 
         let sink = pending.accept().await?;
         let client = self.client.clone();
 
         let fut = async move {
-            match kind {
-                SubscriptionKind::NewHeads => {
-                    let _ = handle_accepted_subscription(client, kind, sink).await;
-                }
-                _ => {}
+            if let Err(e) = handle_accepted_subscription(client, kind, sink).await {
+                log::warn!("Subscription ended with error: {:?}", e);
             }
         }
         .boxed();
