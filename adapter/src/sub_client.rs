@@ -517,19 +517,15 @@ pub async fn handle_accepted_subscription(
                 break;
             },
             maybe_notification = stream.next() => {
-                let notif = if let Some(notification) = maybe_notification {
-                    if let Ok(notif) = notification {
-                        notif
-                    } else {
-                        break ();
-                    }
-                } else {
-                    break ();
+                let notif = match maybe_notification {
+                    Some(Ok(notif)) => notif,
+                    _ => break,
                 };
 
-
-                if sink.send(SubscriptionMessage::from_json(&notif)?).await.is_err() {
-                    break ();
+                // `newHeads` subscribers expect Ethereum block header objects
+                let block = client.get_block_by_hash(notif.hash.0.into()).await?;
+                if sink.send(SubscriptionMessage::from_json(&block.header)?).await.is_err() {
+                    break;
                 }
             }
         }
