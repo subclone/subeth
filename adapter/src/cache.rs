@@ -56,6 +56,12 @@ impl BlockCache {
             let hash = H256::from(block.header.hash.0);
             let number = block.header.inner.number;
 
+            // Re-inserting a cached block must not add a second entry to `order`, otherwise
+            // evicting the stale entry later drops a block that is still considered cached.
+            if inner.hash_to_block.contains_key(&hash) {
+                return;
+            }
+
             // If we're at capacity, remove the oldest block
             if inner.order.len() >= inner.max_blocks {
                 if let Some(old_hash) = inner.order.pop_front() {
@@ -172,13 +178,25 @@ mod tests {
     }
 
     #[test]
-    fn test_latest_block() {
-        let cache = BlockCache::with_capacity(3);
-
+    fn test_duplicate_insert_does_not_evict() {
+        let cache = BlockCache::with_capacity(2);
         let block1 = create_mock_block(1, 1);
         let block2 = create_mock_block(2, 2);
+        let block3 = create_mock_block(3, 3);
 
-        cache.insert_block(block1);
+        cache.insert_block(block1.clone());
+        // Same block fetched again (e.g. by hash after by number)
+        cache.insert_block(block1.clone());
         cache.insert_block(block2.clone());
+
+        // Both distinct blocks fit within capacity
+        assert_eq!(cache.get_by_number(1), Some(block1));
+        assert_eq!(cache.get_by_number(2), Some(block2.clone()));
+
+        // Inserting a third evicts only the oldest distinct block
+        cache.insert_block(block3.clone());
+        assert_eq!(cache.get_by_number(1), None);
+        assert_eq!(cache.get_by_number(2), Some(block2));
+        assert_eq!(cache.get_by_number(3), Some(block3));
     }
 }
