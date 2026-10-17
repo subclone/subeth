@@ -1,7 +1,8 @@
 use alloy_rpc_types_eth::Block as EthBlock;
+use parking_lot::RwLock;
 use sp_core::H256;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// Maximum number of blocks to store in cache
 pub const DEFAULT_MAX_BLOCKS: usize = 100;
@@ -45,73 +46,59 @@ impl BlockCache {
 
     /// Insert block number to hash mapping
     pub fn insert_number_to_hash(&self, number: u64, hash: H256) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.number_to_hash.insert(number, hash);
-        }
+        self.inner.write().number_to_hash.insert(number, hash);
     }
 
     /// Insert a block into the cache
     pub fn insert_block(&self, block: EthBlock) {
-        if let Ok(mut inner) = self.inner.write() {
-            let hash = H256::from(block.header.hash.0);
-            let number = block.header.inner.number;
+        let mut inner = self.inner.write();
+        let hash = H256::from(block.header.hash.0);
+        let number = block.header.inner.number;
 
-            // Re-inserting a cached block must not add a second entry to `order`, otherwise
-            // evicting the stale entry later drops a block that is still considered cached.
-            if inner.hash_to_block.contains_key(&hash) {
-                return;
-            }
-
-            // If we're at capacity, remove the oldest block
-            if inner.order.len() >= inner.max_blocks {
-                if let Some(old_hash) = inner.order.pop_front() {
-                    inner.hash_to_block.remove(&old_hash);
-
-                    // Remove from number_to_hash mapping if it points to this hash
-                    inner.number_to_hash.retain(|_, h| *h != old_hash);
-                }
-            }
-
-            // Insert block hash to number mapping
-            inner.number_to_hash.insert(number.into(), hash.0.into());
-
-            // Insert the full block
-            inner.hash_to_block.insert(hash.0.into(), block.clone());
-
-            // Add to ordered list
-            inner.order.push_back(hash.0.into());
+        // Re-inserting a cached block must not add a second entry to `order`, otherwise
+        // evicting the stale entry later drops a block that is still considered cached.
+        if inner.hash_to_block.contains_key(&hash) {
+            return;
         }
+
+        // If we're at capacity, remove the oldest block
+        if inner.order.len() >= inner.max_blocks {
+            if let Some(old_hash) = inner.order.pop_front() {
+                inner.hash_to_block.remove(&old_hash);
+
+                // Remove from number_to_hash mapping if it points to this hash
+                inner.number_to_hash.retain(|_, h| *h != old_hash);
+            }
+        }
+
+        // Insert block hash to number mapping
+        inner.number_to_hash.insert(number.into(), hash.0.into());
+
+        // Insert the full block
+        inner.hash_to_block.insert(hash.0.into(), block.clone());
+
+        // Add to ordered list
+        inner.order.push_back(hash.0.into());
     }
 
     /// Get a block by number
     #[cfg(test)]
     pub fn get_by_number(&self, number: u64) -> Option<EthBlock> {
-        if let Ok(inner) = self.inner.read() {
-            inner
-                .number_to_hash
-                .get(&number)
-                .and_then(|hash| inner.hash_to_block.get(hash).cloned())
-        } else {
-            None
-        }
+        let inner = self.inner.read();
+        inner
+            .number_to_hash
+            .get(&number)
+            .and_then(|hash| inner.hash_to_block.get(hash).cloned())
     }
 
     /// Get a block by hash
     pub fn get_by_hash(&self, hash: &H256) -> Option<EthBlock> {
-        if let Ok(inner) = self.inner.read() {
-            inner.hash_to_block.get(hash).cloned()
-        } else {
-            None
-        }
+        self.inner.read().hash_to_block.get(hash).cloned()
     }
 
     /// Get the hash of the block with the given number
     pub fn get_hash_by_number(&self, number: u64) -> Option<H256> {
-        if let Ok(inner) = self.inner.read() {
-            inner.number_to_hash.get(&number).cloned()
-        } else {
-            None
-        }
+        self.inner.read().number_to_hash.get(&number).cloned()
     }
 }
 
