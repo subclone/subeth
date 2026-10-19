@@ -45,8 +45,21 @@ impl BlockCache {
     }
 
     /// Insert block number to hash mapping
+    ///
+    /// Mappings without a cached block are dropped once the map outgrows the cache capacity,
+    /// so lookups that never fetch the full block can't grow it without bound.
     pub fn insert_number_to_hash(&self, number: u64, hash: H256) {
-        self.inner.write().number_to_hash.insert(number, hash);
+        let mut inner = self.inner.write();
+        inner.number_to_hash.insert(number, hash);
+
+        if inner.number_to_hash.len() > inner.max_blocks {
+            let BlockCacheInner {
+                number_to_hash,
+                hash_to_block,
+                ..
+            } = &mut *inner;
+            number_to_hash.retain(|n, h| *n == number || hash_to_block.contains_key(h));
+        }
     }
 
     /// Insert a block into the cache
@@ -162,6 +175,26 @@ mod tests {
         assert_eq!(cache.get_by_number(1), None); // Should be evicted
         assert_eq!(cache.get_by_number(2), Some(block2));
         assert_eq!(cache.get_by_number(3), Some(block3));
+    }
+
+    #[test]
+    fn test_number_to_hash_is_bounded() {
+        let cache = BlockCache::with_capacity(2);
+        let block1 = create_mock_block(1, 1);
+        cache.insert_block(block1.clone());
+
+        // Hash-only lookups (e.g. historical state queries) never insert a block
+        for n in 10..1_000u64 {
+            cache.insert_number_to_hash(n, H256::from_low_u64_be(n));
+        }
+
+        assert!(cache.inner.read().number_to_hash.len() <= 3);
+        // The mapping for an actually cached block survives, as does the latest one
+        assert_eq!(cache.get_by_number(1), Some(block1));
+        assert_eq!(
+            cache.get_hash_by_number(999),
+            Some(H256::from_low_u64_be(999))
+        );
     }
 
     #[test]
