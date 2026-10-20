@@ -46,7 +46,7 @@ pub fn hash_key(key: &[u8], hasher: &StorageHasher) -> Vec<u8> {
         StorageHasher::Blake2_256 => blake2_256(key).to_vec(),
         StorageHasher::Blake2_128Concat => {
             let hash = blake2_128(key);
-            let mut result = Vec::with_capacity(32 + key.len());
+            let mut result = Vec::with_capacity(16 + key.len());
             result.extend_from_slice(&hash);
             result.extend_from_slice(key);
             result
@@ -92,6 +92,19 @@ mod tests {
             serde_json::to_string(&key).unwrap(),
             r#"{"name":"ActiveEra","keys":[]}"#
         );
+    }
+
+    #[test]
+    fn test_concat_hashers_prefix_raw_key() {
+        let key = b"key".to_vec();
+        let hashed = hash_key(&key, &StorageHasher::Blake2_128Concat);
+        assert_eq!(hashed.len(), 16 + key.len());
+        assert_eq!(&hashed[..16], &blake2_128(&key));
+        assert_eq!(&hashed[16..], key.as_slice());
+
+        let hashed = hash_key(&key, &StorageHasher::Twox64Concat);
+        assert_eq!(hashed.len(), 8 + key.len());
+        assert_eq!(&hashed[8..], key.as_slice());
     }
 
     #[test]
