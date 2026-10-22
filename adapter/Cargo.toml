@@ -44,5 +44,5 @@ subxt-signer = { version = "0.40.0", features = ["sr25519"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
-jsonrpsee = { version = "0.22", features = ["client"] }
+jsonrpsee = { version = "^0.24", features = ["client"] }
 anyhow = "1"
