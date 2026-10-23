@@ -98,15 +98,12 @@ impl EthereumTransaction {
         // Copy v (1 byte)
         // For EIP-1559, v is either 0 or 1 (recovery id)
         // If v is 27 or 28 (legacy format), convert to 0 or 1
-        let recovery_id = if self.v >= 27 {
-            (self.v - 27) as u8
-        } else {
-            self.v as u8
+        // Match on the full u64 so out-of-range values can't wrap into 0/1 when cast
+        let recovery_id = match self.v {
+            0 | 1 => self.v as u8,
+            27 | 28 => (self.v - 27) as u8,
+            _ => return Err(()),
         };
-
-        if recovery_id > 1 {
-            return Err(());
-        }
 
         signature[64] = recovery_id;
 
@@ -197,5 +194,40 @@ impl AddressMapping {
     /// Truncate `AccountId32` (as [u8; 32]) to get `Address` (H160)
     pub fn to_address(account_id: &[u8; 32]) -> Address {
         Address::from_slice(&account_id[..20])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tx_with_v(v: u64) -> EthereumTransaction {
+        EthereumTransaction {
+            chain_id: 42,
+            nonce: 0,
+            max_priority_fee_per_gas: U256::zero(),
+            max_fee_per_gas: U256::zero(),
+            gas_limit: 21_000,
+            to: H160::zero(),
+            value: U256::zero(),
+            data: Vec::new(),
+            access_list: Vec::new(),
+            v,
+            r: H256::repeat_byte(1),
+            s: H256::repeat_byte(2),
+        }
+    }
+
+    #[test]
+    fn signature_accepts_only_valid_recovery_ids() {
+        assert_eq!(tx_with_v(0).signature().unwrap()[64], 0);
+        assert_eq!(tx_with_v(1).signature().unwrap()[64], 1);
+        assert_eq!(tx_with_v(27).signature().unwrap()[64], 0);
+        assert_eq!(tx_with_v(28).signature().unwrap()[64], 1);
+
+        // 283 - 27 = 256 would wrap to 0 if truncated to u8
+        for v in [2, 26, 29, 283, 284, u64::MAX] {
+            assert!(tx_with_v(v).signature().is_err(), "v = {v} must be rejected");
+        }
     }
 }
