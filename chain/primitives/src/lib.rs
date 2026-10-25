@@ -149,7 +149,7 @@ pub mod conversions {
     }
 }
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use sp_core::blake2_256;
 
 /// Pallet to contract address mapping
@@ -164,10 +164,21 @@ impl PalletContractMapping {
     }
 
     /// Get the pallet name for a given contract address
+    ///
+    /// The address must be an ASCII identifier padded with trailing zero bytes, as produced by
+    /// [`Self::contract_address`]. The zero address yields an empty name.
     pub fn pallet_name(address: Address) -> Option<String> {
-        // try to convert the address to a string
-        let prefix = String::from_utf8(address.to_vec()).ok()?;
-        Some(prefix.trim_end_matches('\0').to_string())
+        let bytes = address.as_slice();
+        let len = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+        let (name, padding) = bytes.split_at(len);
+
+        if padding.iter().any(|&b| b != 0)
+            || !name.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_')
+        {
+            return None;
+        }
+
+        Some(name.iter().map(|&b| b as char).collect())
     }
 
     /// Pad the given string to a valid Ethereum address (20 bytes)
@@ -219,6 +230,35 @@ mod tests {
     }
 
     #[test]
+    fn pallet_name_requires_zero_padded_identifier() {
+        let balances = PalletContractMapping::contract_address("Balances");
+        assert_eq!(
+            PalletContractMapping::pallet_name(balances).as_deref(),
+            Some("Balances")
+        );
+        // The zero address is the generic-call address and maps to an empty name
+        assert_eq!(
+            PalletContractMapping::pallet_name(Address::ZERO).as_deref(),
+            Some("")
+        );
+
+        let mut bytes = [0u8; 20];
+        // Non-zero bytes after the padding started: not a pallet address
+        bytes[..3].copy_from_slice(b"Bal");
+        bytes[10] = b'x';
+        assert_eq!(
+            PalletContractMapping::pallet_name(Address::from(bytes)),
+            None
+        );
+        // Printable-but-not-identifier bytes (an ordinary EOA can easily look like this)
+        let eoa = Address::from([
+            0x41, 0x20, 0x7f, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+            0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11,
+        ]);
+        assert_eq!(PalletContractMapping::pallet_name(eoa), None);
+    }
+
+    #[test]
     fn signature_accepts_only_valid_recovery_ids() {
         assert_eq!(tx_with_v(0).signature().unwrap()[64], 0);
         assert_eq!(tx_with_v(1).signature().unwrap()[64], 1);
@@ -227,7 +267,10 @@ mod tests {
 
         // 283 - 27 = 256 would wrap to 0 if truncated to u8
         for v in [2, 26, 29, 283, 284, u64::MAX] {
-            assert!(tx_with_v(v).signature().is_err(), "v = {v} must be rejected");
+            assert!(
+                tx_with_v(v).signature().is_err(),
+                "v = {v} must be rejected"
+            );
         }
     }
 }
