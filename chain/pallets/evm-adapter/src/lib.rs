@@ -236,32 +236,14 @@ pub mod pallet {
             value_bytes.copy_from_slice(&transaction.data[36..68]);
             let value = U256::from_big_endian(&value_bytes);
 
-            // Convert U256 to T::Balance
-            // For MVP, we assume T::Balance is u64 or u128 and fits
-            // We'll try to convert to u128 first
-            let amount_u128 = value.low_u128();
-            // Then convert to T::Balance. This assumes T::Balance can be created from u128
-            // or we just cast it. Since we can't easily do generic conversion here without more bounds,
-            // we'll limit to what fits in u128 and use `try_into` if possible, or just `saturated_into` if available.
-            // But `saturated_into` is for `SaturatedConversion`.
-            // Let's assume T::Balance is at least u64.
-
-            // A safer way for generic T::Balance is using `AtLeast32BitUnsigned` which `Balance` usually implements.
-            // But we don't have that bound here easily.
-            // Let's use `unique_saturated_into` from `sp_runtime::traits::UniqueSaturatedInto`?
-            // Or just `try_into`.
-
-            // For now, let's assume we can convert via Encode/Decode or similar hack,
-            // OR just add `From<u128>` or `From<u64>` bound to Balance.
-            // `pallet_balances::Config::Balance` has `Member + Parameter + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen`.
-            // `AtLeast32BitUnsigned` implies `From<u32>`.
-
-            // Let's try to decode it as T::Balance from the bytes directly? No, it's U256 BE.
-
-            // We will use `TryInto` if we add the bound, or `sp_runtime::traits::Bounded::max_value()` check.
-            // Actually, let's just use `value.low_u128()` and cast to `T::Balance` using `sp_runtime::traits::SaturatedConversion`.
-            use polkadot_sdk::sp_runtime::traits::SaturatedConversion;
-            let amount: <T as pallet_balances::Config>::Balance = amount_u128.saturated_into();
+            // Reject amounts that don't fit the runtime's balance type instead of silently
+            // truncating them (e.g. 2^128 + 1 must not become a transfer of 1)
+            let amount_u128: u128 = value
+                .try_into()
+                .map_err(|_| Error::<T>::InvalidTransactionData)?;
+            let amount: <T as pallet_balances::Config>::Balance = amount_u128
+                .try_into()
+                .map_err(|_| Error::<T>::InvalidTransactionData)?;
 
             Ok(pallet_balances::Call::<T>::transfer_allow_death {
                 dest,

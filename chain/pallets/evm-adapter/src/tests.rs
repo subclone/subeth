@@ -133,6 +133,52 @@ fn test_decode_transfer_with_invalid_selector() {
 }
 
 #[test]
+fn test_decode_transfer_rejects_amount_overflowing_balance() {
+    new_test_ext().execute_with(|| {
+        let mut to_address = [0u8; 20];
+        to_address[..8].copy_from_slice(b"Balances");
+
+        let build = |value: U256| {
+            let mut data = vec![0xa9, 0x05, 0x9c, 0xbb];
+            let mut recipient = [0u8; 32];
+            recipient[12..].copy_from_slice(&[0x22; 20]);
+            data.extend_from_slice(&recipient);
+            data.extend_from_slice(&value.to_big_endian());
+            EthereumTransaction {
+                chain_id: 1,
+                nonce: 0,
+                max_priority_fee_per_gas: U256::from(0),
+                max_fee_per_gas: U256::from(0),
+                gas_limit: 21000,
+                to: H160::from(to_address),
+                value: U256::from(0),
+                data,
+                access_list: vec![],
+                v: 0,
+                r: Default::default(),
+                s: Default::default(),
+            }
+        };
+
+        // 2^128 + 1 used to be truncated to a transfer of 1
+        let overflowing = (U256::one() << 128) + U256::one();
+        assert_eq!(
+            crate::Pallet::<Test>::decode_call(&build(overflowing)),
+            Err(Error::<Test>::InvalidTransactionData)
+        );
+
+        // The mock's Balance is u64: anything above u64::MAX must be rejected too
+        let above_u64 = U256::from(u64::MAX) + U256::one();
+        assert_eq!(
+            crate::Pallet::<Test>::decode_call(&build(above_u64)),
+            Err(Error::<Test>::InvalidTransactionData)
+        );
+
+        assert!(crate::Pallet::<Test>::decode_call(&build(U256::from(u64::MAX))).is_ok());
+    });
+}
+
+#[test]
 fn test_decode_transfer_with_insufficient_data() {
     new_test_ext().execute_with(|| {
         // Data too short (only selector, missing arguments)
