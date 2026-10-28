@@ -179,6 +179,42 @@ fn test_decode_transfer_rejects_amount_overflowing_balance() {
 }
 
 #[test]
+fn test_decode_transfer_rejects_dirty_address_padding() {
+    new_test_ext().execute_with(|| {
+        let mut to_address = [0u8; 20];
+        to_address[..8].copy_from_slice(b"Balances");
+
+        let mut data = vec![0xa9, 0x05, 0x9c, 0xbb];
+        let mut recipient = [0u8; 32];
+        // Garbage in the high-order padding bytes of the address word
+        recipient[0] = 0xff;
+        recipient[12..].copy_from_slice(&[0x22; 20]);
+        data.extend_from_slice(&recipient);
+        data.extend_from_slice(&U256::from(1).to_big_endian());
+
+        let transaction = EthereumTransaction {
+            chain_id: 1,
+            nonce: 0,
+            max_priority_fee_per_gas: U256::from(0),
+            max_fee_per_gas: U256::from(0),
+            gas_limit: 21000,
+            to: H160::from(to_address),
+            value: U256::from(0),
+            data,
+            access_list: vec![],
+            v: 0,
+            r: Default::default(),
+            s: Default::default(),
+        };
+
+        assert_eq!(
+            crate::Pallet::<Test>::decode_call(&transaction),
+            Err(Error::<Test>::InvalidTransactionData)
+        );
+    });
+}
+
+#[test]
 fn test_decode_transfer_with_insufficient_data() {
     new_test_ext().execute_with(|| {
         // Data too short (only selector, missing arguments)

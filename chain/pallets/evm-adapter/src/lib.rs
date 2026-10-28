@@ -223,7 +223,11 @@ pub mod pallet {
                 return Err(Error::<T>::InvalidTransactionData);
             }
 
-            // Decode address (last 20 bytes of the first 32-byte word)
+            // Decode address (last 20 bytes of the first 32-byte word). The 12 leading bytes
+            // are ABI padding and must be zero, otherwise the input is not a valid `address`.
+            if transaction.data[4..16].iter().any(|&b| b != 0) {
+                return Err(Error::<T>::InvalidTransactionData);
+            }
             let mut address_bytes = [0u8; 20];
             address_bytes.copy_from_slice(&transaction.data[16..36]);
             let address = H160::from(address_bytes);
