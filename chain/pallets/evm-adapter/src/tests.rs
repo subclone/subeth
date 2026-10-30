@@ -690,3 +690,75 @@ fn test_transact_extrinsic_success() {
         assert!(result.is_err());
     });
 }
+
+/// Sign `transaction` with a secp256k1 key and return the recovered EVM sender
+fn sign(transaction: &mut EthereumTransaction, pair: &polkadot_sdk::sp_core::ecdsa::Pair) -> H160 {
+    let sig = pair.sign_prehashed(&transaction.message_hash());
+    let raw: &[u8] = sig.as_ref();
+    transaction.r = H256::from_slice(&raw[..32]);
+    transaction.s = H256::from_slice(&raw[32..64]);
+    transaction.v = raw[64] as u64;
+    crate::Pallet::<Test>::verify_and_recover_signer(transaction).expect("valid signature")
+}
+
+#[test]
+fn test_transact_rejects_replayed_and_out_of_order_nonces() {
+    use polkadot_sdk::sp_core::Pair as _;
+
+    new_test_ext().execute_with(|| {
+        let pair = polkadot_sdk::sp_core::ecdsa::Pair::from_seed(&[7u8; 32]);
+        let dest_account = crate::Pallet::<Test>::map_address_to_account(H160::from([2u8; 20]));
+        let call = RuntimeCall::Balances(pallet_balances::Call::transfer_allow_death {
+            dest: dest_account.clone(),
+            value: 5000,
+        });
+
+        let new_tx = |nonce: u64| EthereumTransaction {
+            chain_id: 1,
+            nonce,
+            max_priority_fee_per_gas: U256::from(0),
+            max_fee_per_gas: U256::from(0),
+            gas_limit: 21000,
+            to: H160::zero(),
+            value: U256::from(0),
+            data: call.encode(),
+            access_list: vec![],
+            v: 0,
+            r: Default::default(),
+            s: Default::default(),
+        };
+
+        let mut tx0 = new_tx(0);
+        let sender = sign(&mut tx0, &pair);
+        let sender_account = crate::Pallet::<Test>::map_address_to_account(sender);
+        let _ = pallet_balances::Pallet::<Test>::force_set_balance(
+            RuntimeOrigin::root(),
+            sender_account.clone(),
+            1_000_000,
+        );
+        let relayer = RuntimeOrigin::signed(dest_account.clone());
+
+        // A transaction with a future nonce is rejected
+        let mut tx1 = new_tx(1);
+        sign(&mut tx1, &pair);
+        assert_eq!(
+            crate::Pallet::<Test>::transact(relayer.clone(), tx1.clone()),
+            Err(Error::<Test>::InvalidNonce.into())
+        );
+
+        // The correctly ordered transaction executes and consumes the nonce
+        assert_ok!(crate::Pallet::<Test>::transact(relayer.clone(), tx0.clone()));
+        assert_eq!(pallet_balances::Pallet::<Test>::free_balance(&dest_account), 5000);
+
+        // Replaying the same signed transaction must not transfer again
+        assert_eq!(
+            crate::Pallet::<Test>::transact(relayer.clone(), tx0),
+            Err(Error::<Test>::InvalidNonce.into())
+        );
+        assert_eq!(pallet_balances::Pallet::<Test>::free_balance(&dest_account), 5000);
+
+        // The next nonce is now accepted
+        assert_ok!(crate::Pallet::<Test>::transact(relayer, tx1));
+        assert_eq!(pallet_balances::Pallet::<Test>::free_balance(&dest_account), 10000);
+    });
+}

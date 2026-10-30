@@ -99,6 +99,8 @@ pub mod pallet {
         UnsupportedPallet,
         /// Invalid transaction data
         InvalidTransactionData,
+        /// Transaction nonce does not match the sender's current account nonce
+        InvalidNonce,
     }
 
     #[pallet::call]
@@ -129,6 +131,15 @@ pub mod pallet {
 
             // Map EVM address to Substrate account
             let substrate_account = Self::map_address_to_account(from);
+
+            // Replay protection: the signed transaction must carry the sender's current nonce,
+            // which is consumed here so the same signature can't be submitted twice.
+            let expected_nonce = frame_system::Pallet::<T>::account_nonce(&substrate_account);
+            ensure!(
+                T::Nonce::try_from(transaction.nonce).ok() == Some(expected_nonce),
+                Error::<T>::InvalidNonce
+            );
+            frame_system::Pallet::<T>::inc_account_nonce(&substrate_account);
 
             // Dispatch the call with the mapped account as origin
             let origin = frame_system::RawOrigin::Signed(substrate_account).into();
