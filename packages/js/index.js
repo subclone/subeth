@@ -31,7 +31,7 @@ async function startSubeth({ chainSpec, url, chainId = 42, port = 8545 } = {}) {
   if (chainSpec) args.push("--chain-spec", chainSpec);
   if (url) args.push("--url", url);
   args.push("--chain-id", chainId.toString());
-  // args.push("--port", port.toString());
+  args.push("--rpc-port", port.toString());
 
   const process = spawn(binaryPath, args, { stdio: "pipe" });
 

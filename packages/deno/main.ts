@@ -32,26 +32,43 @@ export async function startSubeth({
     await Deno.chmod(binaryPath, 0o755); // Make executable
   }
 
-  const args = [];
-  if (chainSpec) args.push("--chain-spec", chainSpec);
-  if (url) args.push("--url", url);
-  args.push("--chain-id", chainId.toString());
-  args.push("--port", port.toString());
-
-  const process = Deno.run({
-    cmd: [binaryPath, ...args],
+  // `Deno.run` was removed in Deno 2; `Deno.Command` is the supported API
+  const process = new Deno.Command(binaryPath, {
+    args: buildArgs({ chainSpec, url, chainId, port }),
     stdout: "piped",
     stderr: "piped",
-  });
+  }).spawn();
 
   return {
     url: `http://localhost:${port}`,
     process,
     stop: async () => {
-      process.close();
+      process.kill();
+      await process.status;
       await Deno.remove(binaryPath);
     },
   };
+}
+
+/** Command line arguments for the subeth binary */
+export function buildArgs({
+  chainSpec,
+  url,
+  chainId,
+  port,
+}: {
+  chainSpec?: string;
+  url?: string;
+  chainId: number;
+  port: number;
+}): string[] {
+  const args: string[] = [];
+  if (chainSpec) args.push("--chain-spec", chainSpec);
+  if (url) args.push("--url", url);
+  args.push("--chain-id", chainId.toString());
+  // The adapter takes `--rpc-port` (from sc-cli); `--port` is rejected by the CLI parser
+  args.push("--rpc-port", port.toString());
+  return args;
 }
 
 if (import.meta.main) {
