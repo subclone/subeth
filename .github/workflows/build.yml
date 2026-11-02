@@ -16,11 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # actions-rs/toolchain is archived and relies on deprecated runner commands
       - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install protoc (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -29,6 +27,9 @@ jobs:
       - name: Install protoc (macOS)
         if: matrix.os == 'macos-latest'
         run: brew install protobuf
+      - name: Run tests
+        run: cargo test
+
       - name: Build Binary
         run: cargo build --release
 
